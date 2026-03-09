@@ -45,7 +45,7 @@ export default function TestCLPPage() {
   const [mainSystemRunning, setMainSystemRunning] = useState(false);
 
   // Estados para Holding Registers como BITS (16 HRs, cada um com 16 bits)
-  const [hrBitsEnabled, setHrBitsEnabled] = useState<Set<number>>(new Set([1])); // HR1 habilitado por padrão
+  const [hrBitsEnabled, setHrBitsEnabled] = useState<Set<number>>(new Set([0, 1, 16])); // HR0, HR1 (outputs), HR16 (inputs) habilitados por padrão
   const [hrBitsState, setHrBitsState] = useState<Map<number, HRBitState>>(
     new Map(),
   );
@@ -819,7 +819,7 @@ export default function TestCLPPage() {
                   Endereços HR ativos (bits):
                 </label>
                 <div className="flex gap-2 flex-wrap">
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map(
+                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map(
                     (hr) => (
                       <button
                         key={hr}
@@ -837,7 +837,7 @@ export default function TestCLPPage() {
                   )}
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  🔒 Bloqueado durante execução. Pare o servidor para modificar.
+                  🔒 Bloqueado durante execução. HR0,HR1=Outputs | HR16=Inputs
                 </p>
               </div>
 
@@ -1095,7 +1095,7 @@ export default function TestCLPPage() {
               </div>
 
               <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map(
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map(
                   (hr) => (
                     <div
                       key={hr}
