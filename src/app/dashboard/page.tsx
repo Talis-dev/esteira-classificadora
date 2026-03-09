@@ -5,6 +5,7 @@ import ConveyorMonitor from "@/components/ConveyorMonitor";
 import QueueVisualization from "@/components/QueueVisualization";
 import SystemLogs from "@/components/SystemLogs";
 import CriticalAlertsWidget from "@/components/CriticalAlertsWidget";
+import DistributionControls from "@/components/DistributionControls";
 
 export default function DashboardPage() {
   return (
@@ -42,6 +43,7 @@ export default function DashboardPage() {
           {/* Coluna Esquerda */}
           <div className="lg:col-span-2 space-y-3 lg:space-y-4">
             <SystemControl />
+            <DistributionControls />
             <QueueVisualization />
           </div>
 

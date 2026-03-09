@@ -1,582 +1,871 @@
 // ============================================
-// CONTROLADOR PRINCIPAL DA ESTEIRA
+// CONTROLADOR DA ESTEIRA CLASSIFICADORA
+// Sistema com CLP Schneider usando Holding Registers
 // ============================================
 
-import { modbusManager } from "./modbus-client";
-import { ModbusServer } from "./modbus-server";
-import { QueueManager } from "./queue-manager";
-import { SystemConfig, SystemState, OutputSensor } from "@/types";
+import { ModbusClient } from "./modbus-client";
 import { systemLogger } from "./system-logger";
+import {
+  getCachedConveyorConfig,
+  updateConveyorConfig,
+} from "./conveyor-config-manager";
+import {
+  ConveyorSystemState,
+  TrackedProduct,
+  ConveyorOutput,
+} from "@/types/conveyor";
+import { v4 as uuidv4 } from "uuid";
 
 export class ConveyorController {
-  private config: SystemConfig;
-  private queueManager: QueueManager;
+  private client: ModbusClient | null = null;
   private running: boolean = false;
-  private cycleInterval: NodeJS.Timeout | null = null;
-  private modbusServer: ModbusServer | null = null; // Servidor para CLP
-  private slavePoolServer: ModbusServer | null = null; // Servidor para Slave Pool
-  private lastErrorLog: number = 0;
-  private errorCount: number = 0;
-  private firstErrorTime?: number;
-  private autoStopScheduled: boolean = false;
-  private cleaningMode: boolean = false; // Modo fachina
+  private readInterval: NodeJS.Timeout | null = null;
 
-  // Estado dos sensores de entrada (últimos valores lidos)
-  private lastInputStates: boolean[] = [];
+  // Estado do sistema
+  private state: ConveyorSystemState = {
+    connected: false,
+    running: false,
+    cleaningMode: false,
+    inputs: {
+      rpmLastPulse: 0,
+      fullTurnLastPulse: 0,
+      triggerLastPulse: 0,
+      doorOpen: false,
+      inverterFault: false,
+      emergencyPressed: false,
+      motorRunning: false,
+    },
+    outputs: {
+      valve1Active: false,
+      valve2Active: false,
+      valve3Active: false,
+    },
+    trackedProducts: [],
+    stuckInputs: [],
+    distributionMode: "manual",
+    nextOutputIndex: 0,
+    lastMinuteReset: Date.now(),
+    stats: {
+      totalDetected: 0,
+      totalDiverted: 0,
+      totalPassed: 0,
+      outputCounts: { 1: 0, 2: 0, 3: 0 },
+      outputCountsPerMinute: { 1: 0, 2: 0, 3: 0 },
+      currentRPM: 0,
+      currentSpeed: 0,
+      piecesPerMinute: 0,
+      uptime: 0,
+    },
+    lastUpdate: Date.now(),
+    recentErrors: [],
+  };
 
-  // Estado dos sensores de saída
-  private outputSensors: Map<number, OutputSensor> = new Map();
-
-  constructor(config: SystemConfig) {
-    this.config = config;
-    this.queueManager = new QueueManager(config.outputs);
-
-    // Inicializa sensores de saída
-    config.outputs.forEach((output) => {
-      this.outputSensors.set(output.id, {
-        outputId: output.id,
-        activated: false,
-        lastActivation: 0,
-      });
-    });
-  }
+  // Controle de pulsos
+  private lastInputStates: Map<string, boolean> = new Map();
+  private inputStuckTimestamps: Map<string, number> = new Map(); // Tracking de inputs travados
+  private rpmPulseCount: number = 0;
+  private rpmLastCheckTime: number = Date.now();
+  private startTime: number = 0;
+  private minuteResetInterval: NodeJS.Timeout | null = null;
+  private manualModeApplyCycleCounter: number = 0; // Contador para aplicar modos manuais periodicamente
+  private detectionTimestamps: number[] = []; // Timestamps de detecções para calcular peças/min
 
   /**
-   * Inicia o controlador
+   * Inicia o sistema
    */
   async start(): Promise<boolean> {
     if (this.running) {
-      systemLogger.info("Controller", "Sistema já está em execução");
-      return true;
+      systemLogger.warning("Conveyor", "Sistema já está rodando");
+      return false;
     }
 
     try {
-      // CONEXÃO SLAVE POOL - Configurável (Client ou Server)
-      if (this.config.slaveMode === "client") {
-        // Modo Client: Conecta ao Slave Pool
-        const slaveClient = modbusManager.getSlaveClient(
-          this.config.slaveIp,
-          this.config.slavePort,
-          this.config.slaveTimeout,
-        );
-        await slaveClient.connect();
-        systemLogger.success(
-          "Controller",
-          `Conectado ao Slave Pool (Client) ${this.config.slaveIp}:${this.config.slavePort}`,
-        );
-      } else {
-        // Modo Server: Aguarda Slave Pool conectar
-        if (!this.slavePoolServer) {
-          this.slavePoolServer = new ModbusServer(this.config.slavePort);
-        }
-        await this.slavePoolServer.start();
-        systemLogger.success(
-          "Controller",
-          `Servidor Slave Pool iniciado na porta ${this.config.slavePort}`,
-        );
-        systemLogger.info(
-          "Controller",
-          `Aguardando Slave Pool conectar em 0.0.0.0:${this.config.slavePort}`,
-        );
+      const config = getCachedConveyorConfig();
+
+      // Conecta ao CLP em modo client
+      this.client = new ModbusClient(
+        config.connection.ip,
+        config.connection.port,
+        config.connection.timeout,
+      );
+
+      const connected = await this.client.connect();
+      if (!connected) {
+        throw new Error("Falha ao conectar no CLP");
       }
 
-      // CONEXÃO CLP - Configurável (Client ou Server)
-      if (this.config.clpMode === "server") {
-        // Modo Server: Aguarda CLP conectar
-        this.modbusServer = new ModbusServer(this.config.clpPort);
-        await this.modbusServer.start();
-
-        // Configura tempos de motor ativo nos holding registers
-        const engineDurations = this.config.outputs.map(
-          (output) => output.activeEngineDuration,
-        );
-        this.modbusServer.setEngineActiveDurations(engineDurations);
-
-        systemLogger.info(
-          "Controller",
-          `Aguardando CLP conectar (Server) na porta ${this.config.clpPort}`,
-        );
-      } else {
-        // Modo Client: Conecta no CLP
-        const clpClient = modbusManager.getCLPClient(
-          this.config.clpIp,
-          this.config.clpPort,
-          this.config.clpTimeout,
-        );
-        await clpClient.connect();
-
-        // Escreve tempos de motor ativo nos holding registers do CLP
-        // Usa endereço individual configurado em cada saída (motorTimeHRAddress)
-        for (const output of this.config.outputs) {
-          const hrAddress = output.motorTimeHRAddress || 1;
-          await clpClient.writeSingleRegister(
-            hrAddress,
-            output.activeEngineDuration,
-          );
-        }
-
-        const hrAddresses = this.config.outputs
-          .map((o) => o.motorTimeHRAddress || 1)
-          .join(", ");
-        const engineDurations = this.config.outputs
-          .map((o) => o.activeEngineDuration)
-          .join(", ");
-
-        systemLogger.success(
-          "Controller",
-          `Conectado ao CLP (Client) ${this.config.clpIp}:${this.config.clpPort}`,
-        );
-        systemLogger.info(
-          "Controller",
-          `Tempos de motor escritos no CLP (HRs ${hrAddresses}): ${engineDurations} ms`,
-        );
-      }
-
+      this.state.connected = true;
       this.running = true;
-      this.startCycle();
+      this.state.running = true;
+      this.startTime = Date.now();
 
-      systemLogger.success("Controller", "Sistema iniciado com sucesso");
+      systemLogger.success(
+        "Conveyor",
+        `Sistema iniciado - CLP ${config.connection.ip}:${config.connection.port}`,
+      );
+
+      // Inicia ciclo de leitura
+      this.startReadCycle();
+
+      // Inicia reset de contadores por minuto
+      this.startMinuteReset();
+
+      // Carrega modo de distribuição
+      this.state.distributionMode = config.distributionMode;
+
+      // Aplica modos manuais (force-open, force-closed)
+      await this.applyManualModes();
+
       return true;
     } catch (error: any) {
       systemLogger.error(
-        "Controller",
+        "Conveyor",
         `Erro ao iniciar sistema: ${error.message}`,
       );
+      this.state.connected = false;
+      this.state.running = false;
+      this.running = false;
       return false;
     }
   }
 
   /**
-   * Para o controlador
+   * Para o sistema
    */
   async stop(): Promise<void> {
-    if (!this.running) return;
-
-    this.running = false;
-
-    if (this.cycleInterval) {
-      clearInterval(this.cycleInterval);
-      this.cycleInterval = null;
-    }
-
-    // Para o servidor Modbus CLP e aguarda fechar
-    if (this.modbusServer) {
-      await this.modbusServer.stop();
-      this.modbusServer = null;
-    }
-
-    // Para o servidor Modbus Slave Pool e aguarda fechar
-    if (this.slavePoolServer) {
-      await this.slavePoolServer.stop();
-      this.slavePoolServer = null;
-    }
-
-    modbusManager.disconnectAll();
-    systemLogger.info("Controller", "Sistema parado completamente");
-  }
-
-  /**
-   * Inicia o ciclo de leitura/escrita
-   */
-  private startCycle(): void {
-    this.cycleInterval = setInterval(async () => {
-      await this.executeCycle();
-    }, this.config.readCycleMs);
-  }
-
-  /**
-   * Executa um ciclo completo
-   */
-  private async executeCycle(): Promise<void> {
-    try {
-      // 1. Ler sensores de entrada (pulsos de produtos)
-      await this.readInputSensors();
-
-      // 2. Processar filas e determinar ativações
-      const activations = this.queueManager.processQueues();
-
-      // 3. Enviar comandos para o CLP
-      await this.writeOutputCommands(activations);
-    } catch (error: any) {
-      this.handleReadError(`Erro no ciclo: ${error.message}`);
-    }
-  }
-
-  /**
-   * Gerencia erros de leitura Modbus - apenas registra, nunca para o sistema
-   * Sistema deve permanecer ativo aguardando reconexão automática
-   */
-  private handleReadError(message: string): void {
-    const now = Date.now();
-
-    // Registra primeiro erro
-    if (!this.firstErrorTime) {
-      this.firstErrorTime = now;
-      this.errorCount = 1;
-      systemLogger.error("Controller", message);
-      systemLogger.info(
-        "Controller",
-        "Sistema permanece ativo aguardando reconexão...",
-      );
+    if (!this.running) {
       return;
     }
 
-    this.errorCount++;
+    this.running = false;
+    this.state.running = false;
 
-    // Calcula tempo decorrido desde o primeiro erro
-    const elapsedSeconds = (now - this.firstErrorTime) / 1000;
-
-    // Log periódico - apenas a cada 10 segundos para não poluir console
-    if (!this.lastErrorLog || now - this.lastErrorLog > 10000) {
-      systemLogger.warning(
-        "Controller",
-        `Aguardando reconexão... (${this.errorCount} tentativas em ${elapsedSeconds.toFixed(1)}s)`,
-      );
-      systemLogger.info(
-        "Controller",
-        "Sistema continua ativo - reconexão automática em andamento",
-      );
-      this.lastErrorLog = now;
+    // Para ciclo de leitura
+    if (this.readInterval) {
+      clearInterval(this.readInterval);
+      this.readInterval = null;
     }
 
-    // IMPORTANTE: Sistema NUNCA para automaticamente em modo operação
-    // Apenas aguarda reconexão do Slave Pool ou CLP
+    // Para reset de minuto
+    if (this.minuteResetInterval) {
+      clearInterval(this.minuteResetInterval);
+      this.minuteResetInterval = null;
+    }
+
+    // Desliga todas as válvulas antes de desconectar
+    await this.deactivateAllValves();
+
+    // Reseta todos os HRs de saída (HR0 e HR1) para garantir que nada fique acionado
+    if (this.client) {
+      await this.client.writeSingleRegister(0, 0); // HR0 = 0 (cleaning mode)
+      await this.client.writeSingleRegister(1, 0); // HR1 = 0 (todas as válvulas)
+      systemLogger.info("Conveyor", "HRs de saída resetados (HR0, HR1 = 0)");
+    }
+
+    // Desconecta do CLP
+    if (this.client) {
+      this.client.disconnect();
+      this.client = null;
+    }
+
+    this.state.connected = false;
+
+    systemLogger.info("Conveyor", "Sistema parado");
   }
 
   /**
-   * Reseta contador de erros após leitura bem-sucedida (reconexão)
+   * Inicia o ciclo de leitura dos inputs
    */
-  private resetErrorCounter(): void {
-    if (this.errorCount > 0) {
-      const elapsedSeconds = this.firstErrorTime
-        ? ((Date.now() - this.firstErrorTime) / 1000).toFixed(1)
-        : "0";
-      systemLogger.success(
-        "Controller",
-        `Reconectado com sucesso após ${this.errorCount} tentativas (${elapsedSeconds}s offline)`,
-      );
-      systemLogger.success("Controller", "Sistema operando normalmente");
-    }
-    this.errorCount = 0;
-    this.firstErrorTime = undefined;
-    this.lastErrorLog = 0;
-    this.autoStopScheduled = false;
-  }
+  private startReadCycle(): void {
+    const config = getCachedConveyorConfig();
 
-  /**
-   * Lê os sensores de entrada (pulsos Modbus do Slave)
-   */
-  private async readInputSensors(): Promise<void> {
-    try {
-      let coilsData: boolean[] = [];
+    this.readInterval = setInterval(async () => {
+      if (!this.running || !this.client) return;
 
-      // Determina de onde ler baseado no modo
-      if (this.config.slaveMode === "server") {
-        // Modo Server: lê dos buffers do próprio servidor
-        if (!this.slavePoolServer) return;
+      try {
+        // Lê HR16 (inputs) de uma vez
+        const result = await this.client.readHoldingRegisterBits(16);
 
-        // Lê cada coil individualmente do buffer do servidor usando os inputAddress das outputs
-        for (const output of this.config.outputs) {
-          const coilValue = this.slavePoolServer.readCoil(output.inputAddress);
-          coilsData.push(coilValue);
+        if (result.success && result.bits) {
+          await this.processInputs(result.bits);
         }
-      } else {
-        // Modo Client: lê do cliente Modbus conectado ao Slave Pool
-        const slaveClient = modbusManager.getSlaveClient(
-          this.config.slaveIp,
-          this.config.slavePort,
-          this.config.slaveTimeout,
+
+        // Processa produtos rastreados e ativa válvulas
+        await this.processTrackedProducts();
+
+        // Aplica modos manuais forçados (a cada ~1 segundo)
+        this.manualModeApplyCycleCounter++;
+        if (this.manualModeApplyCycleCounter >= 20) {
+          await this.applyManualModes();
+          this.manualModeApplyCycleCounter = 0;
+        }
+
+        // Calcula RPM e velocidade
+        this.calculateSpeed();
+
+        // Atualiza uptime
+        this.state.stats.uptime = Date.now() - this.startTime;
+        this.state.lastUpdate = Date.now();
+      } catch (error: any) {
+        this.addError(
+          "read_cycle",
+          `Erro no ciclo de leitura: ${error.message}`,
         );
+      }
+    }, config.readCycleMs);
+  }
 
-        if (!slaveClient.isActuallyConnected()) return;
+  /**
+   * Inicia o reset automático dos contadores a cada minuto
+   */
+  private startMinuteReset(): void {
+    this.minuteResetInterval = setInterval(() => {
+      // Reseta contadores por minuto
+      this.state.stats.outputCountsPerMinute = {
+        1: 0,
+        2: 0,
+        3: 0,
+      };
 
-        const inputAddresses = this.config.outputs.map((o) => o.inputAddress);
-        const startAddress = Math.min(...inputAddresses);
-        const maxAddress = Math.max(...inputAddresses);
-        const quantity = maxAddress - startAddress + 1;
+      this.state.lastMinuteReset = Date.now();
 
-        // Valida endereços antes de ler
-        if (startAddress < 0 || quantity <= 0 || quantity > 2000) {
-          this.handleReadError(
-            `Endereços inválidos: start=${startAddress}, quantity=${quantity}`,
-          );
-          return;
+      systemLogger.info("Conveyor", "📊 Contadores por minuto resetados");
+    }, 60000); // 60 segundos
+  }
+
+  /**
+   * Aplica modos manuais forçados (force-open, force-closed)
+   * Método público para permitir aplicação imediata ao alterar configuração
+   */
+  async applyManualModes(): Promise<void> {
+    if (!this.client) return;
+
+    const config = getCachedConveyorConfig();
+
+    for (const output of config.conveyorOutputs) {
+      if (output.manualMode === "force-open") {
+        // Força válvula aberta
+        const success = await this.client.setHoldingRegisterBit(
+          output.address.hr,
+          output.address.bit,
+        );
+        if (success) {
+          this.updateValveState(output.id, true);
         }
-
-        const response = await slaveClient.readCoils(startAddress, quantity);
-
-        if (!response.success || !response.coils) {
-          this.handleReadError(
-            `Falha ao ler sensores (addr: ${startAddress}, qty: ${quantity})`,
-          );
-          return;
-        }
-
-        // Mapeia os valores lidos para cada output baseado no inputAddress
-        for (const output of this.config.outputs) {
-          const index = output.inputAddress - startAddress;
-          coilsData.push(response.coils[index] || false);
+      } else if (
+        output.manualMode === "force-closed" ||
+        output.manualMode === "disabled"
+      ) {
+        // Força válvula fechada
+        const success = await this.client.clearHoldingRegisterBit(
+          output.address.hr,
+          output.address.bit,
+        );
+        if (success) {
+          this.updateValveState(output.id, false);
         }
       }
+    }
+  }
 
-      // Sucesso - reseta contador de erros
-      this.resetErrorCounter();
+  /**
+   * Processa os inputs lidos do CLP
+   */
+  private async processInputs(bits: boolean[]): Promise<void> {
+    const config = getCachedConveyorConfig();
+    const now = Date.now();
+    const STUCK_PULSE_THRESHOLD_MS = 1000; // 1 segundo sem mudar = travado
 
-      // Detecta pulsos (transição de 0 para 1)
-      coilsData.forEach((currentState, index) => {
-        const previousState = this.lastInputStates[index] || false;
+    // Limpa alertas de inputs travados
+    this.state.stuckInputs = [];
 
-        // Detectou pulso (borda de subida)
-        if (currentState && !previousState) {
-          const output = this.config.outputs[index];
-          if (output && output.enabled) {
-            systemLogger.info(
-              "Controller",
-              `Pulso detectado no inputAddress ${output.inputAddress} - Produto para saída ${output.id} (${output.name})`,
-            );
+    // Processa cada input
+    for (const [key, input] of Object.entries(config.inputs)) {
+      if (!input.enabled) continue;
 
-            // Adiciona produto à fila (usa o ID da saída como tipo de produto)
-            this.queueManager.addProduct(output.id);
+      const bitValue = bits[input.address.bit];
+      const lastState = this.lastInputStates.get(input.id) ?? false;
+
+      // Detecta mudança de estado
+      const stateChanged = bitValue !== lastState;
+
+      if (stateChanged) {
+        this.lastInputStates.set(input.id, bitValue);
+        this.inputStuckTimestamps.delete(input.id); // Remove tracking se mudou
+
+        // Loga apenas se configurado para logar
+        if (input.logChanges) {
+          systemLogger.debug(
+            "Conveyor",
+            `${input.name}: ${bitValue ? "ON" : "OFF"}`,
+          );
+        }
+
+        // Processa tipos específicos
+        if (input.type === "pulse" && bitValue) {
+          await this.handlePulse(input.id, now);
+        } else if (input.type === "digital") {
+          await this.handleDigitalInput(input.id, bitValue, input.normallyOn);
+        }
+      } else {
+        // Detecta inputs de pulso travados
+        if (input.type === "pulse" && bitValue) {
+          if (!this.inputStuckTimestamps.has(input.id)) {
+            this.inputStuckTimestamps.set(input.id, now);
+          }
+
+          const stuckTime =
+            now - (this.inputStuckTimestamps.get(input.id) || now);
+
+          if (stuckTime > STUCK_PULSE_THRESHOLD_MS) {
+            // Input travado! Adiciona alerta
+            this.state.stuckInputs.push({
+              inputId: input.id,
+              inputName: input.name,
+              stuckSince: this.inputStuckTimestamps.get(input.id) || now,
+              address: input.address,
+            });
+
+            // Não processa como pulso válido
+            if (input.logChanges) {
+              systemLogger.warning(
+                "Conveyor",
+                `⚠️ ${input.name} TRAVADO - ignorando pulsos infinitos`,
+              );
+            }
           }
         }
+      }
+    }
+  }
+
+  /**
+   * Trata pulsos (RPM, volta completa, gatilho)
+   */
+  private async handlePulse(inputId: string, timestamp: number): Promise<void> {
+    switch (inputId) {
+      case "rpm":
+        this.state.inputs.rpmLastPulse = timestamp;
+        this.rpmPulseCount++;
+        break;
+
+      case "fullTurn":
+        this.state.inputs.fullTurnLastPulse = timestamp;
+        break;
+
+      case "trigger":
+        this.state.inputs.triggerLastPulse = timestamp;
+        await this.handleProductDetection(timestamp);
+        break;
+    }
+  }
+
+  /**
+   * Trata inputs digitais (porta, emergência, etc.)
+   */
+  private async handleDigitalInput(
+    inputId: string,
+    value: boolean,
+    normallyOn: boolean,
+  ): Promise<void> {
+    const isNormal = value === normallyOn;
+
+    switch (inputId) {
+      case "door":
+        this.state.inputs.doorOpen = !isNormal;
+        if (!isNormal) {
+          systemLogger.warning("Conveyor", "Porta aberta!");
+        }
+        break;
+
+      case "inverter":
+        this.state.inputs.inverterFault = !isNormal;
+        if (!isNormal) {
+          systemLogger.error("Conveyor", "Falha no inversor!");
+          await this.stop();
+        }
+        break;
+
+      case "emergency":
+        this.state.inputs.emergencyPressed = !isNormal;
+        if (!isNormal) {
+          systemLogger.error("Conveyor", "Emergência acionada!");
+          await this.stop();
+        }
+        break;
+
+      case "motor":
+        this.state.inputs.motorRunning = value;
+        break;
+    }
+  }
+
+  /**
+   * Detecta novo produto e inicia rastreamento
+   */
+  private async handleProductDetection(timestamp: number): Promise<void> {
+    const config = getCachedConveyorConfig();
+
+    // Determina qual saída deve receber o produto
+    const targetOutput = this.determineTargetOutput();
+
+    if (targetOutput === null) {
+      // Nenhuma saída disponível, produto passa reto
+      systemLogger.debug(
+        "Conveyor",
+        "Produto detectado - passa reto (saídas completas)",
+      );
+      this.state.stats.totalDetected++;
+      this.detectionTimestamps.push(timestamp); // Registra detecção para cálculo de peças/min
+      this.state.stats.totalPassed++;
+      return;
+    }
+
+    // Cria produto rastreado
+    const product: TrackedProduct = {
+      id: uuidv4(),
+      outputId: targetOutput.id,
+      detectedAt: timestamp,
+      scheduledActivationTime: timestamp + targetOutput.delayMs,
+      status: "waiting",
+    };
+
+    this.state.trackedProducts.push(product);
+    this.state.stats.totalDetected++;
+    this.detectionTimestamps.push(timestamp); // Registra detecção para cálculo de peças/min
+
+    systemLogger.info(
+      "Conveyor",
+      `Produto #${this.state.stats.totalDetected} → ${targetOutput.name} (delay ${targetOutput.delayMs}ms)`,
+    );
+  }
+
+  /**
+   * Determina qual saída deve receber o próximo produto
+   * Baseado no modo de distribuição: manual, equal (igual) ou percentage (porcentagem)
+   */
+  private determineTargetOutput(): ConveyorOutput | null {
+    const config = getCachedConveyorConfig();
+    const mode = this.state.distributionMode;
+
+    // Filtra saídas habilitadas e em modo auto
+    const enabledOutputs = config.conveyorOutputs.filter(
+      (output) => output.enabled && output.manualMode === "auto",
+    );
+
+    if (enabledOutputs.length === 0) {
+      return null;
+    }
+
+    // MODO MANUAL: Usa targetPerMinute individual para cada saída
+    if (mode === "manual") {
+      for (const output of enabledOutputs) {
+        const currentMinuteCount =
+          this.state.stats.outputCountsPerMinute[output.id] || 0;
+
+        // Se targetPerMinute é 0, aceita ilimitado
+        // Se não atingiu a meta do minuto, aceita
+        if (
+          output.targetPerMinute === 0 ||
+          currentMinuteCount < output.targetPerMinute
+        ) {
+          return output;
+        }
+      }
+      return null; // Todas as saídas atingiram meta
+    }
+
+    // MODO EQUAL: Alterna entre saídas igualmente (round-robin)
+    if (mode === "equal") {
+      // Verifica se todas atingiram meta
+      const outputsWithSpace = enabledOutputs.filter((output) => {
+        const currentMinuteCount =
+          this.state.stats.outputCountsPerMinute[output.id] || 0;
+        return (
+          output.targetPerMinute === 0 ||
+          currentMinuteCount < output.targetPerMinute
+        );
       });
 
-      // Atualiza estados
-      this.lastInputStates = coilsData;
-    } catch (error: any) {
-      this.handleReadError(error.message || "Erro desconhecido");
-    }
-  }
+      if (outputsWithSpace.length === 0) {
+        return null; // Todas atingiram meta
+      }
 
-  /**
-   * Envia comandos de ativação para o CLP
-   */
-  private async writeOutputCommands(
-    activations: Map<number, boolean>,
-  ): Promise<void> {
-    try {
-      // Determina como escrever baseado no modo CLP
-      if (this.config.clpMode === "server") {
-        // Modo Server: sistema aguarda CLP conectar, escreve nos buffers do servidor
-        if (!this.modbusServer) return;
+      // Rotaciona entre saídas disponíveis
+      let attempts = 0;
+      while (attempts < enabledOutputs.length) {
+        const currentOutput = enabledOutputs[this.state.nextOutputIndex];
+        const currentMinuteCount =
+          this.state.stats.outputCountsPerMinute[currentOutput.id] || 0;
 
-        for (const output of this.config.outputs) {
-          const shouldActivate = activations.get(output.id) || false;
-          this.modbusServer.writeCoil(output.outputAddress, shouldActivate);
+        // Próximo índice (circular)
+        this.state.nextOutputIndex =
+          (this.state.nextOutputIndex + 1) % enabledOutputs.length;
 
-          // Atualiza estado do sensor
-          const sensor = this.outputSensors.get(output.id);
-          if (sensor) {
-            const wasActivated = sensor.activated;
-            sensor.activated = shouldActivate;
-
-            if (shouldActivate && !wasActivated) {
-              const pulseDuration = output.pulseDuration || 500;
-              sensor.lastActivation = Date.now();
-              systemLogger.info(
-                "Controller",
-                `Pulso ${pulseDuration}ms enviado para saída ${output.id} (${output.name}) - Coil ${output.outputAddress}`,
-              );
-            }
-          }
+        // Verifica se tem espaço
+        if (
+          currentOutput.targetPerMinute === 0 ||
+          currentMinuteCount < currentOutput.targetPerMinute
+        ) {
+          return currentOutput;
         }
-      } else {
-        // Modo Client: sistema conecta ao CLP, escreve via cliente
-        const clpClient = modbusManager.getCLPClient(
-          this.config.clpIp,
-          this.config.clpPort,
-          this.config.clpTimeout,
-        );
 
-        if (!clpClient.isActuallyConnected()) return;
+        attempts++;
+      }
 
-        for (const output of this.config.outputs) {
-          const shouldActivate = activations.get(output.id) || false;
+      return null;
+    }
 
-          // Escreve via cliente Modbus
-          await clpClient.writeSingleCoil(output.outputAddress, shouldActivate);
+    // MODO PERCENTAGE: Distribui baseado na porcentagem calculada pelas metas
+    if (mode === "percentage") {
+      // Calcula total de produtos por minuto configurado
+      const totalPerMinute = enabledOutputs.reduce(
+        (sum, output) => sum + (output.targetPerMinute || 0),
+        0,
+      );
 
-          // Atualiza estado do sensor
-          const sensor = this.outputSensors.get(output.id);
-          if (sensor) {
-            const wasActivated = sensor.activated;
-            sensor.activated = shouldActivate;
+      if (totalPerMinute === 0) {
+        // Sem meta definida, usa distribuição igual
+        return enabledOutputs[
+          this.state.nextOutputIndex++ % enabledOutputs.length
+        ];
+      }
 
-            if (shouldActivate && !wasActivated) {
-              const pulseDuration = output.pulseDuration || 500;
-              sensor.lastActivation = Date.now();
-              systemLogger.info(
-                "Controller",
-                `Pulso ${pulseDuration}ms enviado para saída ${output.id} (${output.name}) - Coil ${output.outputAddress}`,
-              );
-            }
-          }
+      // Encontra saída com maior déficit (diferença entre esperado e atual)
+      let bestOutput: ConveyorOutput | null = null;
+      let maxDeficit = -Infinity;
+
+      for (const output of enabledOutputs) {
+        if (output.targetPerMinute === 0) continue;
+
+        const currentMinuteCount =
+          this.state.stats.outputCountsPerMinute[output.id] || 0;
+
+        // Já atingiu meta? Pula
+        if (currentMinuteCount >= output.targetPerMinute) {
+          continue;
+        }
+
+        // Calcula quanto falta para atingir proporção ideal
+        const expectedRatio = output.targetPerMinute / totalPerMinute;
+        const totalSent = Object.values(
+          this.state.stats.outputCountsPerMinute,
+        ).reduce((a, b) => a + b, 0);
+        const expectedCount = totalSent * expectedRatio;
+        const deficit = expectedCount - currentMinuteCount;
+
+        if (deficit > maxDeficit) {
+          maxDeficit = deficit;
+          bestOutput = output;
         }
       }
-    } catch (error: any) {
-      this.handleReadError(`Erro ao escrever outputs: ${error.message}`);
+
+      return bestOutput;
     }
+
+    return null;
   }
 
   /**
-   * Obtém o estado atual do sistema
+   * Processa produtos rastreados e ativa válvulas
    */
-  getSystemState(): SystemState {
-    const slaveClient = modbusManager.getSlaveClient(
-      this.config.slaveIp,
-      this.config.slavePort,
-      this.config.slaveTimeout,
-    );
+  private async processTrackedProducts(): Promise<void> {
+    const now = Date.now();
+    const config = getCachedConveyorConfig();
 
-    const stats = this.queueManager.getStats();
+    for (const product of this.state.trackedProducts) {
+      if (
+        product.status === "waiting" &&
+        now >= product.scheduledActivationTime
+      ) {
+        const output = config.conveyorOutputs.find(
+          (o) => o.id === product.outputId,
+        );
 
-    // Slave Pool conectado depende do modo:
-    // - Modo Server: verifica se tem clientes conectados
-    // - Modo Client: verifica se o cliente está conectado
-    let slaveConnected = false;
-    if (this.config.slaveMode === "server") {
-      slaveConnected = this.slavePoolServer?.hasClients() || false;
-    } else {
-      // Modo client: verificar se o cliente Slave está conectado
-      slaveConnected = slaveClient.isConnected();
-    }
+        if (output) {
+          await this.activateValve(output);
+          product.status = "activated";
 
-    // CLP conectado depende do modo:
-    // - Modo Server: verifica se tem clientes conectados
-    // - Modo Client: verifica se o cliente está conectado
-    let clpConnected = false;
-    if (this.config.clpMode === "server") {
-      clpConnected = this.modbusServer?.hasClients() || false;
-    } else {
-      // Modo client: verificar se o cliente CLP está conectado
-      const clpClient = modbusManager.getCLPClient(
-        this.config.clpIp,
-        this.config.clpPort,
-        this.config.clpTimeout,
-      );
-      clpConnected = clpClient.isConnected();
-    }
-
-    return {
-      connected: this.running,
-      slaveConnected: slaveConnected,
-      clpConnected: clpConnected,
-      slaveMode: this.config.slaveMode,
-      clpMode: this.config.clpMode,
-      cleaningMode: this.cleaningMode,
-      queues: this.queueManager.getAllQueues(),
-      sensors: Array.from(this.outputSensors.values()),
-      totalProductsProcessed: stats.totalProcessed,
-      totalProductsCancelled: stats.totalCancelled,
-      lastUpdate: Date.now(),
-      errors: [],
-    };
-  }
-
-  /**
-   * Obtém o gerenciador de filas
-   */
-  getQueueManager(): QueueManager {
-    return this.queueManager;
-  }
-
-  /**
-   * Atualiza a configuração
-   */
-  async updateConfig(config: SystemConfig): Promise<void> {
-    this.config = config;
-    // Reinicializa o queue manager com as novas configurações
-    this.queueManager = new QueueManager(config.outputs);
-
-    // Atualiza tempos de motor ativo nos holding registers
-    const engineDurations = config.outputs.map(
-      (output) => output.activeEngineDuration,
-    );
-
-    if (this.modbusServer) {
-      // Modo Server: escreve nos buffers locais
-      this.modbusServer.setEngineActiveDurations(engineDurations);
-    } else if (this.config.clpMode === "client") {
-      // Modo Client: escreve nos HRs do CLP remoto
-      const clpClient = modbusManager.getCLPClient(
-        this.config.clpIp,
-        this.config.clpPort,
-        this.config.clpTimeout,
-      );
-
-      if (clpClient.isActuallyConnected()) {
-        // Escreve cada tempo de motor no HR correspondente usando endereço individual
-        for (const output of this.config.outputs) {
-          const hrAddress = output.motorTimeHRAddress || 1;
-          await clpClient.writeSingleRegister(
-            hrAddress,
-            output.activeEngineDuration,
+          // Incrementa contadores
+          const updatedOutputs = config.conveyorOutputs.map((o) =>
+            o.id === output.id ? { ...o, currentCount: o.currentCount + 1 } : o,
           );
-        }
+          updateConveyorConfig({ conveyorOutputs: updatedOutputs });
 
-        const hrAddresses = this.config.outputs
-          .map((o) => o.motorTimeHRAddress || 1)
-          .join(", ");
-        const durations = this.config.outputs
-          .map((o) => o.activeEngineDuration)
-          .join(", ");
-        systemLogger.info(
-          "Controller",
-          `Tempos de motor atualizados no CLP (HRs ${hrAddresses}): ${durations} ms`,
-        );
+          this.state.stats.outputCounts[output.id]++;
+          this.state.stats.outputCountsPerMinute[output.id] =
+            (this.state.stats.outputCountsPerMinute[output.id] || 0) + 1;
+          this.state.stats.totalDiverted++;
+
+          const minuteCount = this.state.stats.outputCountsPerMinute[output.id];
+          const target = output.targetPerMinute || 0;
+
+          systemLogger.success(
+            "Conveyor",
+            `${output.name} acionada [${minuteCount}/${target === 0 ? "∞" : target} p/min]`,
+          );
+
+          // Agenda desativação
+          setTimeout(async () => {
+            await this.deactivateValve(output);
+            product.status = "passed";
+          }, output.activationMs);
+        }
       }
     }
 
-    systemLogger.info("Controller", "Configuração atualizada");
-  }
-
-  /**
-   * Alterna o modo fachina (limpeza)
-   */
-  toggleCleaningMode(): boolean {
-    if (!this.running) {
-      systemLogger.warning(
-        "Controller",
-        "Não é possível alternar modo fachina - sistema não está rodando",
-      );
-      return false;
-    }
-
-    this.cleaningMode = !this.cleaningMode;
-
-    // Escreve no coil configurado baseado no modo CLP
-    if (this.config.clpMode === "server") {
-      // Modo Server: escreve nos buffers do servidor
-      if (!this.modbusServer) return false;
-      this.modbusServer.writeCoil(
-        this.config.cleaningModeCoil,
-        this.cleaningMode,
-      );
-    } else {
-      // Modo Client: escreve via cliente
-      const clpClient = modbusManager.getCLPClient(
-        this.config.clpIp,
-        this.config.clpPort,
-        this.config.clpTimeout,
-      );
-      if (!clpClient.isActuallyConnected()) return false;
-      clpClient.writeSingleCoil(
-        this.config.cleaningModeCoil,
-        this.cleaningMode,
-      );
-    }
-
-    systemLogger.success(
-      "Controller",
-      `Modo fachina ${this.cleaningMode ? "ATIVADO" : "DESATIVADO"}`,
+    // Limpa produtos antigos (3s é suficiente para passagem rápida)
+    this.state.trackedProducts = this.state.trackedProducts.filter(
+      (p) => now - p.detectedAt < 3000,
     );
-    return this.cleaningMode;
   }
 
   /**
-   * Obtém estado do modo fachina
+   * Ativa uma válvula
    */
-  isCleaningMode(): boolean {
-    return this.cleaningMode;
+  private async activateValve(output: ConveyorOutput): Promise<void> {
+    if (!this.client) return;
+
+    if (
+      output.manualMode === "disabled" ||
+      output.manualMode === "force-closed"
+    ) {
+      return;
+    }
+
+    const success = await this.client.setHoldingRegisterBit(
+      output.address.hr,
+      output.address.bit,
+    );
+
+    if (success) {
+      this.updateValveState(output.id, true);
+    } else {
+      this.addError("valve", `Falha ao ativar ${output.name}`);
+    }
+  }
+
+  /**
+   * Desativa uma válvula
+   */
+  private async deactivateValve(output: ConveyorOutput): Promise<void> {
+    if (!this.client) return;
+
+    if (output.manualMode === "force-open") {
+      return;
+    }
+
+    const success = await this.client.clearHoldingRegisterBit(
+      output.address.hr,
+      output.address.bit,
+    );
+
+    if (success) {
+      this.updateValveState(output.id, false);
+    } else {
+      this.addError("valve", `Falha ao desativar ${output.name}`);
+    }
+  }
+
+  /**
+   * Desativa todas as válvulas
+   */
+  private async deactivateAllValves(): Promise<void> {
+    const config = getCachedConveyorConfig();
+
+    for (const output of config.conveyorOutputs) {
+      await this.deactivateValve(output);
+    }
+  }
+
+  /**
+   * Atualiza estado da válvula
+   */
+  private updateValveState(outputId: number, active: boolean): void {
+    switch (outputId) {
+      case 1:
+        this.state.outputs.valve1Active = active;
+        break;
+      case 2:
+        this.state.outputs.valve2Active = active;
+        break;
+      case 3:
+        this.state.outputs.valve3Active = active;
+        break;
+    }
+  }
+
+  /**
+   * Calcula RPM, velocidade e peças por minuto
+   */
+  private calculateSpeed(): void {
+    const config = getCachedConveyorConfig();
+    const now = Date.now();
+    const elapsedSeconds = (now - this.rpmLastCheckTime) / 1000;
+
+    if (elapsedSeconds >= 1.0) {
+      const rpm =
+        (this.rpmPulseCount / config.rpmPulsesPerRevolution) *
+        (60 / elapsedSeconds);
+      this.state.stats.currentRPM = Math.round(rpm * 10) / 10;
+
+      const circumference = Math.PI * config.conveyorDiameter;
+      const speed = (circumference * rpm) / 60;
+      this.state.stats.currentSpeed = Math.round(speed * 100) / 100;
+
+      this.rpmPulseCount = 0;
+      this.rpmLastCheckTime = now;
+    }
+
+    // Calcula peças por minuto (últimos 60 segundos)
+    const oneMinuteAgo = now - 60000;
+    this.detectionTimestamps = this.detectionTimestamps.filter(
+      (timestamp) => timestamp > oneMinuteAgo,
+    );
+    this.state.stats.piecesPerMinute = this.detectionTimestamps.length;
+  }
+
+  /**
+   * Ativa modo de higienização
+   */
+  async setCleaningMode(active: boolean): Promise<boolean> {
+    if (!this.client) return false;
+
+    const config = getCachedConveyorConfig();
+    const address = config.outputs.cleaningMode;
+
+    const success = active
+      ? await this.client.setHoldingRegisterBit(address.hr, address.bit)
+      : await this.client.clearHoldingRegisterBit(address.hr, address.bit);
+
+    if (success) {
+      this.state.cleaningMode = active;
+      systemLogger.info(
+        "Conveyor",
+        `Modo higienização ${active ? "ATIVADO" : "DESATIVADO"}`,
+      );
+    }
+
+    return success;
+  }
+
+  /**
+   * Controle manual de válvula
+   */
+  async setValveManual(outputId: number, active: boolean): Promise<boolean> {
+    const config = getCachedConveyorConfig();
+    const output = config.conveyorOutputs.find((o) => o.id === outputId);
+
+    if (!output || !this.client) return false;
+
+    const success = active
+      ? await this.client.setHoldingRegisterBit(
+          output.address.hr,
+          output.address.bit,
+        )
+      : await this.client.clearHoldingRegisterBit(
+          output.address.hr,
+          output.address.bit,
+        );
+
+    if (success) {
+      this.updateValveState(outputId, active);
+    }
+
+    return success;
+  }
+
+  /**
+   * Atualiza modo manual de saída
+   */
+  async setOutputManualMode(
+    outputId: number,
+    mode: "auto" | "force-open" | "force-closed" | "disabled",
+  ): Promise<boolean> {
+    const config = getCachedConveyorConfig();
+    const updatedOutputs = config.conveyorOutputs.map((o) =>
+      o.id === outputId ? { ...o, manualMode: mode } : o,
+    );
+
+    updateConveyorConfig({ conveyorOutputs: updatedOutputs });
+
+    if (mode === "force-open") {
+      const output = updatedOutputs.find((o) => o.id === outputId);
+      if (output) await this.setValveManual(outputId, true);
+    } else if (mode === "force-closed" || mode === "disabled") {
+      await this.setValveManual(outputId, false);
+    }
+
+    systemLogger.info("Conveyor", `Saída ${outputId} → modo ${mode}`);
+    return true;
+  }
+
+  /**
+   * Adiciona erro
+   */
+  private addError(type: string, message: string): void {
+    this.state.recentErrors.push({
+      timestamp: Date.now(),
+      type,
+      message,
+    });
+
+    if (this.state.recentErrors.length > 10) {
+      this.state.recentErrors.shift();
+    }
+
+    systemLogger.error("Conveyor", message);
+  }
+
+  /**
+   * Obtém estado
+   */
+  getState(): ConveyorSystemState {
+    return { ...this.state };
+  }
+
+  /**
+   * Verifica se está rodando
+   */
+  isRunning(): boolean {
+    return this.running;
+  }
+
+  /**
+   * Verifica se está conectado
+   */
+  isConnected(): boolean {
+    return this.state.connected && this.client !== null;
+  }
+
+  /**
+   * Reseta contadores
+   */
+  resetCounters(): void {
+    const config = getCachedConveyorConfig();
+
+    const updatedOutputs = config.conveyorOutputs.map((o) => ({
+      ...o,
+      currentCount: 0,
+    }));
+    updateConveyorConfig({ conveyorOutputs: updatedOutputs });
+
+    this.state.stats.totalDetected = 0;
+    this.state.stats.totalDiverted = 0;
+    this.state.stats.totalPassed = 0;
+    this.state.stats.outputCounts = { 1: 0, 2: 0, 3: 0 };
+
+    systemLogger.info("Conveyor", "Contadores resetados");
   }
 }
+
+// Singleton global
+declare global {
+  var conveyorController: ConveyorController | undefined;
+}
+
+if (!global.conveyorController) {
+  global.conveyorController = new ConveyorController();
+}
+
+export const conveyorController = global.conveyorController;

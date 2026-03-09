@@ -18,8 +18,7 @@ export default function SystemControl() {
   const connectingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Sincronizar estado ao carregar
-    syncState();
+    // Verificar status ao carregar
     checkStatus();
 
     // Polling a cada 2 segundos para manter estado atualizado
@@ -35,14 +34,6 @@ export default function SystemControl() {
       }
     };
   }, []);
-
-  const syncState = async () => {
-    try {
-      await fetch("/api/modbus/sync-state", { method: "POST" });
-    } catch (error) {
-      console.error("Erro ao sincronizar estado:", error);
-    }
-  };
 
   const checkStatus = async () => {
     try {
@@ -143,13 +134,15 @@ export default function SystemControl() {
     try {
       const response = await fetch("/api/modbus/cleaning-mode", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: !cleaningMode }),
       });
 
       const data = await response.json();
       if (data.success) {
         setCleaningMode(data.cleaningMode);
       } else {
-        alert(`Erro ao alternar modo fachina: ${data.error}`);
+        alert(`Erro ao alternar modo higienização: ${data.error}`);
       }
     } catch (error: any) {
       alert(`Erro: ${error.message}`);

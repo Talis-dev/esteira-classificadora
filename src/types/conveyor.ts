@@ -35,8 +35,9 @@ export interface ConveyorOutput {
   activationMs: number; // Tempo que fica acionado (ms)
   enabled: boolean; // Saída habilitada
   manualMode: "auto" | "force-open" | "force-closed" | "disabled"; // Modo manual
-  targetCount: number; // Quantidade planejada para esta saída
-  currentCount: number; // Contador atual de produtos desviados
+  targetPerMinute: number; // Meta de produtos por minuto (0 = ilimitado)
+  currentCount: number; // Contador atual de produtos desviados no minuto
+  targetCount: number; // DEPRECATED: Usar targetPerMinute
 }
 
 /**
@@ -47,7 +48,17 @@ export interface TrackedProduct {
   outputId: number; // Saída de destino (1-3, ou 0 para passar reto)
   detectedAt: number; // Timestamp quando foi detectado
   scheduledActivationTime: number; // Timestamp programado de ativação da válvula
-  status: "waiting" | "in-transit" | "activated" | "passed";
+  status: "waiting" | "activated" | "passed";
+}
+
+/**
+ * Informação sobre input travado
+ */
+export interface StuckInputAlert {
+  inputId: string;
+  inputName: string;
+  stuckSince: number;
+  address: ModbusAddress;
 }
 
 /**
@@ -88,6 +99,9 @@ export interface ConveyorSystemConfig {
   // Configurações dos braços/saídas
   conveyorOutputs: ConveyorOutput[];
 
+  // Modo de distribuição de produtos
+  distributionMode: "manual" | "equal" | "percentage"; // manual=usa targetCount, equal=alterna igualmente, percentage=divide por %
+
   // Configurações da esteira
   readCycleMs: number; // Intervalo de leitura (padrão: 50ms para capturar pulsos rápidos)
   rpmPulsesPerRevolution: number; // Pulsos por revolução (para cálculo de velocidade)
@@ -126,14 +140,24 @@ export interface ConveyorSystemState {
   // Produtos sendo rastreados
   trackedProducts: TrackedProduct[];
 
+  // Alertas de inputs travados
+  stuckInputs: StuckInputAlert[];
+
+  // Modo de distribuição atual
+  distributionMode: "manual" | "equal" | "percentage";
+  nextOutputIndex: number; // Próxima saída para distribuição igual (0-2)
+  lastMinuteReset: number; // Timestamp do último reset de minuto
+
   // Estatísticas
   stats: {
     totalDetected: number;
     totalDiverted: number;
     totalPassed: number;
     outputCounts: Record<number, number>; // Contador por saída
+    outputCountsPerMinute: Record<number, number>; // Contador por minuto
     currentRPM: number;
     currentSpeed: number; // m/s
+    piecesPerMinute: number; // Peças detectadas por minuto
     uptime: number;
   };
 
@@ -240,7 +264,8 @@ export const DEFAULT_CONVEYOR_CONFIG: ConveyorSystemConfig = {
       activationMs: 500, // 500ms acionado
       enabled: true,
       manualMode: "auto",
-      targetCount: 0,
+      targetPerMinute: 0, // 0 = ilimitado
+      targetCount: 0, // DEPRECATED
       currentCount: 0,
     },
     {
@@ -251,6 +276,7 @@ export const DEFAULT_CONVEYOR_CONFIG: ConveyorSystemConfig = {
       activationMs: 500,
       enabled: true,
       manualMode: "auto",
+      targetPerMinute: 0,
       targetCount: 0,
       currentCount: 0,
     },
@@ -262,10 +288,13 @@ export const DEFAULT_CONVEYOR_CONFIG: ConveyorSystemConfig = {
       activationMs: 500,
       enabled: true,
       manualMode: "auto",
+      targetPerMinute: 0,
       targetCount: 0,
       currentCount: 0,
     },
   ],
+
+  distributionMode: "manual", // Padrão: manual (usa targetPerMinute individual)
 
   readCycleMs: 50, // 50ms para capturar pulsos rápidos
   rpmPulsesPerRevolution: 10, // Exemplo: 10 pulsos por volta

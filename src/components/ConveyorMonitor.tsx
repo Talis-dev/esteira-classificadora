@@ -5,17 +5,19 @@
 // ============================================
 
 import { useEffect, useState } from "react";
-import { SystemState } from "@/types";
+import { ConveyorSystemState } from "@/types/conveyor";
 import {
   SignalIcon,
   SignalSlashIcon,
   CheckCircleIcon,
-  ExclamationTriangleIcon,
+  BoltIcon,
 } from "@heroicons/react/24/outline";
-import { cn, formatTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export default function ConveyorMonitor() {
-  const [systemState, setSystemState] = useState<SystemState | null>(null);
+  const [systemState, setSystemState] = useState<ConveyorSystemState | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -55,6 +57,20 @@ export default function ConveyorMonitor() {
     );
   }
 
+  const formatUptime = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    if (hours > 0) {
+      return `${hours}h ${minutes % 60}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-md p-3 xl:p-4 space-y-3 xl:space-y-4">
       {/* Header */}
@@ -77,90 +93,202 @@ export default function ConveyorMonitor() {
         </div>
       </div>
 
-      {/* Status das Conexões */}
-      <div className="grid grid-cols-2 gap-2 xl:gap-4">
-        <div
-          className={cn(
-            "p-2 xl:p-3 rounded-lg border-2",
-            systemState.slaveConnected
-              ? "bg-green-50 border-green-200"
-              : "bg-red-50 border-red-200",
-          )}
-        >
-          <div className="flex items-center justify-between ">
-            <span className="font-medium text-gray-700 text-xs xl:text-sm">
-              SISTEMA (
-              {systemState.slaveMode === "server" ? "Server" : "Client"})
+      {/* Alerta de Inputs Travados */}
+      {systemState.stuckInputs && systemState.stuckInputs.length > 0 && (
+        <div className="bg-red-100 border-2 border-red-500 rounded-lg p-3 animate-pulse">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-3 h-3 rounded-full bg-red-500 animate-ping" />
+            <span className="text-sm font-bold text-red-900">
+              ⚠️ INPUTS TRAVADOS DETECTADOS
             </span>
-            {systemState.slaveConnected ? (
-              <CheckCircleIcon className="w-4 h-4 xl:w-6 xl:h-6 text-green-600" />
-            ) : (
-              <ExclamationTriangleIcon className="w-4 h-4 xl:w-6 xl:h-6 text-red-600" />
-            )}
           </div>
-          <p
-            className={cn(
-              "text-xs xl:text-sm mt-1",
-              systemState.slaveConnected ? "text-green-600" : "text-red-600",
-            )}
-          >
-            {systemState.slaveConnected ? "Conectado" : "Desconectado"}
-          </p>
+          <div className="space-y-1">
+            {systemState.stuckInputs.map((alert, idx) => {
+              const stuckTime = Math.floor(
+                (Date.now() - alert.stuckSince) / 1000,
+              );
+              return (
+                <div key={idx} className="text-xs text-red-800 ml-5">
+                  🔴 <strong>{alert.inputName}</strong> - HR{alert.address.hr}{" "}
+                  Bit
+                  {alert.address.bit} - Travado há {stuckTime}s
+                </div>
+              );
+            })}
+          </div>
         </div>
+      )}
 
-        <div
-          className={cn(
-            "p-2 xl:p-3 rounded-lg border-2",
-            systemState.clpConnected
-              ? "bg-green-50 border-green-200"
-              : "bg-red-50 border-red-200",
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="font-medium text-gray-700 text-xs xl:text-sm">
-              CLP ({systemState.clpMode === "server" ? "Server" : "Client"})
-            </span>
-            {systemState.clpConnected ? (
-              <CheckCircleIcon className="w-4 h-4 xl:w-6 xl:h-6 text-green-600" />
-            ) : (
-              <ExclamationTriangleIcon className="w-4 h-4 xl:w-6 xl:h-6 text-red-600" />
-            )}
-          </div>
-          <p
+      {/* Inputs Status */}
+      <div className="border rounded-lg p-2">
+        <h3 className="font-semibold text-sm mb-2 text-gray-700">
+          Entradas (HR16)
+        </h3>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div
             className={cn(
-              "text-xs xl:text-sm mt-1",
-              systemState.clpConnected ? "text-green-600" : "text-red-600",
+              "flex items-center gap-1",
+              systemState.inputs.motorRunning
+                ? "text-green-600"
+                : "text-gray-400",
             )}
           >
-            {systemState.clpConnected ? "Conectado" : "Desconectado"}
-          </p>
+            <BoltIcon className="w-4 h-4" />
+            <span>
+              Motor {systemState.inputs.motorRunning ? "Ligado" : "Desligado"}
+            </span>
+          </div>
+          <div
+            className={cn(
+              "flex items-center gap-1",
+              systemState.inputs.doorOpen ? "text-red-600" : "text-green-600",
+            )}
+          >
+            <span>
+              {systemState.inputs.doorOpen
+                ? "🚪 Porta Aberta"
+                : "🔒 Porta Fechada"}
+            </span>
+          </div>
+          <div
+            className={cn(
+              "flex items-center gap-1",
+              systemState.inputs.emergencyPressed
+                ? "text-red-600 font-bold"
+                : "text-gray-400",
+            )}
+          >
+            <span>
+              {systemState.inputs.emergencyPressed
+                ? "⚠️ EMERGÊNCIA"
+                : "✓ Emergência OK"}
+            </span>
+          </div>
+          <div
+            className={cn(
+              "flex items-center gap-1",
+              systemState.inputs.inverterFault
+                ? "text-red-600"
+                : "text-green-600",
+            )}
+          >
+            <span>
+              {systemState.inputs.inverterFault
+                ? "❌ Inversor Falha"
+                : "✓ Inversor OK"}
+            </span>
+          </div>
         </div>
       </div>
+
+      {/* Outputs Status */}
+      <div className="border rounded-lg p-2">
+        <h3 className="font-semibold text-sm mb-2 text-gray-700">
+          Saídas (HR1)
+        </h3>
+        <div className="grid grid-cols-3 gap-2">
+          {[1, 2, 3].map((id) => {
+            const active =
+              id === 1
+                ? systemState.outputs.valve1Active
+                : id === 2
+                  ? systemState.outputs.valve2Active
+                  : systemState.outputs.valve3Active;
+            return (
+              <div
+                key={id}
+                className={cn(
+                  "text-center py-2 rounded-lg text-xs font-semibold",
+                  active
+                    ? "bg-green-100 text-green-700"
+                    : "bg-gray-100 text-gray-400",
+                )}
+              >
+                Válvula {id}
+                <br />
+                {active ? "ABERTA" : "Fechada"}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Contadores por Minuto */}
+      {systemState.stats.outputCountsPerMinute && (
+        <div className="border rounded-lg p-2 bg-blue-50">
+          <h3 className="font-semibold text-sm mb-2 text-blue-900">
+            📊 Produção por Minuto
+          </h3>
+          <div className="grid grid-cols-3 gap-2">
+            {[1, 2, 3].map((id) => {
+              const count = systemState.stats.outputCountsPerMinute[id] || 0;
+              return (
+                <div
+                  key={id}
+                  className="text-center py-2 rounded-lg bg-white border border-blue-200"
+                >
+                  <div className="text-2xl font-bold text-blue-600">
+                    {count}
+                  </div>
+                  <div className="text-xs text-gray-600">Saída {id}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-xs text-gray-500 mt-2 text-center">
+            Resetado a cada 60 segundos
+          </div>
+        </div>
+      )}
 
       {/* Estatísticas */}
-      <div className="grid grid-cols-2 gap-3 xl:gap-4 pt-3 xl:pt-4 border-t">
+      <div className="grid grid-cols-3 gap-3 pt-3 border-t">
         <div>
-          <p className="text-xs xl:text-sm text-gray-500">
-            Produtos Processados
-          </p>
-          <p className="text-xl xl:text-2xl font-bold text-green-600">
-            {systemState.totalProductsProcessed}
+          <p className="text-xs text-gray-500">Detectados</p>
+          <p className="text-xl font-bold text-blue-600">
+            {systemState.stats.totalDetected}
           </p>
         </div>
         <div>
-          <p className="text-xs xl:text-sm text-gray-500">
-            Produtos Cancelados
+          <p className="text-xs text-gray-500">Desviados</p>
+          <p className="text-xl font-bold text-green-600">
+            {systemState.stats.totalDiverted}
           </p>
-          <p className="text-xl xl:text-2xl font-bold text-red-600">
-            {systemState.totalProductsCancelled}
+        </div>
+        <div>
+          <p className="text-xs text-gray-500">Passou</p>
+          <p className="text-xl font-bold text-gray-600">
+            {systemState.stats.totalPassed}
           </p>
         </div>
       </div>
 
-      {/* Última atualização */}
+      {/* Speed, RPM & Peças/min */}
+      <div className="grid grid-cols-3 gap-3 pt-2 border-t">
+        <div>
+          <p className="text-xs text-gray-500">Velocidade</p>
+          <p className="text-lg font-bold text-purple-600">
+            {systemState.stats.currentSpeed.toFixed(2)} m/min
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500">RPM</p>
+          <p className="text-lg font-bold text-orange-600">
+            {systemState.stats.currentRPM.toFixed(1)}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500">Peças/min</p>
+          <p className="text-lg font-bold text-green-600">
+            {systemState.stats.piecesPerMinute || 0}
+          </p>
+        </div>
+      </div>
+
+      {/* Uptime */}
       <div className="pt-2 border-t">
         <p className="text-xs text-gray-400">
-          Última atualização: {formatTime(systemState.lastUpdate)}
+          Tempo ativado: {formatUptime(systemState.stats.uptime)}
         </p>
       </div>
     </div>

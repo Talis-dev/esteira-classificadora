@@ -4,47 +4,30 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getController } from "../../controller-instance";
-import { getMainServerState } from "@/lib/server-state";
-import "../../auto-restore"; // Importa para garantir que auto-restore seja executado
 
 export async function GET(request: NextRequest) {
   try {
     const controller = getController();
-    const savedState = getMainServerState();
 
-    // Se controlador existe, está rodando
-    const isRunning = controller !== null;
+    const isRunning = controller.isRunning();
+    const isConnected = controller.isConnected();
 
-    console.log("[API Status] Verificação:", {
-      hasController: isRunning,
-      savedStateRunning: savedState.running,
-    });
-
-    if (!controller) {
+    if (!isRunning) {
       return NextResponse.json({
         success: true,
         running: false,
         connected: false,
-        savedState: savedState,
         message: "Sistema não iniciado",
       });
     }
 
-    const state = controller.getSystemState();
-    const queueManager = controller.getQueueManager();
-    const stats = queueManager.getStats();
-    const logs = queueManager.getLogs(50);
-
-    console.log("[API Status] Sistema rodando - connected:", state.connected);
+    const state = controller.getState();
 
     return NextResponse.json({
       success: true,
       running: true,
-      connected: state.connected,
+      connected: isConnected,
       state,
-      stats,
-      logs,
-      savedState,
       timestamp: Date.now(),
     });
   } catch (error: any) {

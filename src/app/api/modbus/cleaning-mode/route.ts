@@ -1,29 +1,32 @@
 // ============================================
-// API ROUTE - MODO FACHINA (LIMPEZA)
+// API ROUTE - MODO LIMPEZA (HIGIENIZAÇÃO)
 // ============================================
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getController } from "../../controller-instance";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
+    const body = await request.json();
+    const { active } = body;
+
     const controller = getController();
 
-    if (!controller) {
+    if (!controller.isRunning()) {
       return NextResponse.json(
         { error: "Sistema não está em execução" },
         { status: 400 },
       );
     }
 
-    const newState = controller.toggleCleaningMode();
+    const success = await controller.setCleaningMode(active);
 
     return NextResponse.json({
-      success: true,
-      cleaningMode: newState,
-      message: newState
-        ? "Modo fachina ATIVADO - Módulos levantados e roletes ativos"
-        : "Modo fachina DESATIVADO",
+      success,
+      cleaningMode: active,
+      message: active
+        ? "Modo higienização ATIVADO"
+        : "Modo higienização DESATIVADO",
     });
   } catch (error: any) {
     console.error("[API Cleaning Mode] Erro:", error);
@@ -35,15 +38,17 @@ export async function GET() {
   try {
     const controller = getController();
 
-    if (!controller) {
+    if (!controller.isRunning()) {
       return NextResponse.json({
         cleaningMode: false,
         available: false,
       });
     }
 
+    const state = controller.getState();
+
     return NextResponse.json({
-      cleaningMode: controller.isCleaningMode(),
+      cleaningMode: state.cleaningMode,
       available: true,
     });
   } catch (error: any) {

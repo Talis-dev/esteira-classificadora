@@ -1,46 +1,13 @@
 // ============================================
-// INSTÂNCIA SINGLETON DO CONTROLADOR
+// RE-EXPORTAÇÃO DO SINGLETON DO CONTROLADOR
+// Mantém compatibilidade com código existente
 // ============================================
 
-import { ConveyorController } from "@/lib/conveyor-controller";
-import { loadConfig } from "@/lib/config-manager";
-import { updateMainServerState } from "@/lib/server-state";
+import { conveyorController } from "@/lib/conveyor-controller";
 
 /**
- * Singleton verdadeiro - usa global do Node.js para persistir entre hot-reloads
- * NUNCA é destruída automaticamente por navegação de páginas ou hot-reload
+ * Retorna a instância do controlador
  */
-
-// Usar global do Node.js para persistir entre recargas de módulo
-declare global {
-  var __modbusController: ConveyorController | undefined;
-}
-
-/**
- * Retorna a instância atual do controlador (pode ser null se parado)
- * APENAS CONSULTA - nunca cria ou destrói automaticamente
- */
-export function getController(): ConveyorController | null {
-  return global.__modbusController || null;
-}
-
-export function initializeController(): ConveyorController {
-  if (!global.__modbusController) {
-    const config = loadConfig();
-    global.__modbusController = new ConveyorController(config);
-    // Salvar estado como rodando
-    updateMainServerState(true, Date.now());
-    console.log("[Controller] Nova instância criada e salva em global");
-  }
-  return global.__modbusController;
-}
-
-export function destroyController(): void {
-  if (global.__modbusController) {
-    global.__modbusController.stop();
-    global.__modbusController = undefined;
-    // Atualizar estado como parado
-    updateMainServerState(false, 0);
-    console.log("[Controller] Instância destruída");
-  }
+export function getController() {
+  return conveyorController;
 }

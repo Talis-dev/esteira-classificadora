@@ -3,8 +3,7 @@
 // ============================================
 
 import { NextRequest, NextResponse } from "next/server";
-import { getController, initializeController, destroyController } from "../../controller-instance";
-import { updateMainServerState } from "@/lib/server-state";
+import { getController } from "../../controller-instance";
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,23 +17,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let controller = getController();
+    const controller = getController();
 
     if (action === "start") {
-      if (!controller) {
-        controller = initializeController();
-      }
-
       const started = await controller.start();
 
       if (started) {
-        // Salvar estado
-        updateMainServerState(true, Date.now());
-
         return NextResponse.json({
           success: true,
           message: "Sistema iniciado com sucesso",
-          state: controller.getSystemState(),
+          state: controller.getState(),
         });
       } else {
         return NextResponse.json(
@@ -45,19 +37,54 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "stop") {
-      if (!controller) {
-        return NextResponse.json(
-          { error: "Sistema não está em execução" },
-          { status: 400 },
-        );
-      }
-
-      // IMPORTANTE: Destruir completamente o controller para evitar auto-reconexão
-      await destroyController();
+      await controller.stop();
 
       return NextResponse.json({
         success: true,
         message: "Sistema parado com sucesso",
+      });
+    }
+
+    // Modo de limpeza
+    if (action === "cleaning") {
+      const { active } = body;
+      const success = await controller.setCleaningMode(active);
+
+      return NextResponse.json({
+        success,
+        message: `Modo higienização ${active ? "ativado" : "desativado"}`,
+      });
+    }
+
+    // Controle manual de válvula
+    if (action === "valve-manual") {
+      const { outputId, active } = body;
+      const success = await controller.setValveManual(outputId, active);
+
+      return NextResponse.json({
+        success,
+        message: `Válvula ${outputId} ${active ? "ativada" : "desativada"} manualmente`,
+      });
+    }
+
+    // Modo manual de saída
+    if (action === "output-mode") {
+      const { outputId, mode } = body;
+      const success = await controller.setOutputManualMode(outputId, mode);
+
+      return NextResponse.json({
+        success,
+        message: `Saída ${outputId} configurada para modo ${mode}`,
+      });
+    }
+
+    // Reset de contadores
+    if (action === "reset-counters") {
+      controller.resetCounters();
+
+      return NextResponse.json({
+        success: true,
+        message: "Contadores resetados",
       });
     }
 
