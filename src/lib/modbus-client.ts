@@ -382,6 +382,149 @@ export class ModbusClient {
       return false;
     }
   }
+
+  // ============================================
+  // MÉTODOS PARA TRABALHAR COM BITS EM HOLDING REGISTERS
+  // (Para CLPs que usam HR para representar coils)
+  // ============================================
+
+  /**
+   * Lê um Holding Register e retorna seus 16 bits como array de booleanos
+   * Bit 0 = LSB (menos significativo), Bit 15 = MSB (mais significativo)
+   */
+  async readHoldingRegisterBits(
+    address: number,
+  ): Promise<{ success: boolean; bits?: boolean[]; error?: string }> {
+    const result = await this.readHoldingRegisters(address, 1);
+
+    if (!result.success || !result.registers) {
+      return {
+        success: false,
+        error: result.error || "Falha ao ler registrador",
+      };
+    }
+
+    const value = result.registers[0];
+    const bits: boolean[] = [];
+
+    // Extrai cada bit (0-15)
+    for (let i = 0; i < 16; i++) {
+      bits.push((value & (1 << i)) !== 0);
+    }
+
+    return { success: true, bits };
+  }
+
+  /**
+   * Escreve um valor inteiro em um HR, tratando-o como 16 bits individuais
+   * Útil quando você quer setar múltiplos bits de uma vez
+   */
+  async writeHoldingRegisterFromBits(
+    address: number,
+    bits: boolean[],
+  ): Promise<boolean> {
+    if (bits.length !== 16) {
+      console.error(
+        "[Modbus] Array de bits deve ter exatamente 16 elementos",
+      );
+      return false;
+    }
+
+    let value = 0;
+    for (let i = 0; i < 16; i++) {
+      if (bits[i]) {
+        value |= 1 << i;
+      }
+    }
+
+    return await this.writeSingleRegister(address, value);
+  }
+
+  /**
+   * Seta (liga) um bit específico em um Holding Register
+   * Mantém os outros bits inalterados
+   */
+  async setHoldingRegisterBit(
+    address: number,
+    bitIndex: number,
+  ): Promise<boolean> {
+    if (bitIndex < 0 || bitIndex > 15) {
+      console.error("[Modbus] Índice de bit deve estar entre 0 e 15");
+      return false;
+    }
+
+    // Lê valor atual
+    const result = await this.readHoldingRegisters(address, 1);
+    if (!result.success || !result.registers) {
+      console.error("[Modbus] Falha ao ler HR antes de setar bit");
+      return false;
+    }
+
+    const currentValue = result.registers[0];
+    const newValue = currentValue | (1 << bitIndex); // Seta o bit
+
+    return await this.writeSingleRegister(address, newValue);
+  }
+
+  /**
+   * Limpa (desliga) um bit específico em um Holding Register
+   * Mantém os outros bits inalterados
+   */
+  async clearHoldingRegisterBit(
+    address: number,
+    bitIndex: number,
+  ): Promise<boolean> {
+    if (bitIndex < 0 || bitIndex > 15) {
+      console.error("[Modbus] Índice de bit deve estar entre 0 e 15");
+      return false;
+    }
+
+    // Lê valor atual
+    const result = await this.readHoldingRegisters(address, 1);
+    if (!result.success || !result.registers) {
+      console.error("[Modbus] Falha ao ler HR antes de limpar bit");
+      return false;
+    }
+
+    const currentValue = result.registers[0];
+    const newValue = currentValue & ~(1 << bitIndex); // Limpa o bit
+
+    return await this.writeSingleRegister(address, newValue);
+  }
+
+  /**
+   * Escreve (liga/desliga) um bit específico em um Holding Register
+   * Mantém os outros bits inalterados
+   */
+  async writeHoldingRegisterBit(
+    address: number,
+    bitIndex: number,
+    value: boolean,
+  ): Promise<boolean> {
+    return value
+      ? await this.setHoldingRegisterBit(address, bitIndex)
+      : await this.clearHoldingRegisterBit(address, bitIndex);
+  }
+
+  /**
+   * Envia um pulso em um bit de um Holding Register
+   * Liga o bit, aguarda a duração, e desliga
+   */
+  async pulseHoldingRegisterBit(
+    address: number,
+    bitIndex: number,
+    duration: number,
+  ): Promise<boolean> {
+    // Liga o bit
+    const setSuccess = await this.setHoldingRegisterBit(address, bitIndex);
+    if (!setSuccess) return false;
+
+    // Aguarda a duração
+    await new Promise((resolve) => setTimeout(resolve, duration));
+
+    // Desliga o bit
+    return await this.clearHoldingRegisterBit(address, bitIndex);
+  }
 }
 
 // Singleton para gerenciar as conexões Modbus

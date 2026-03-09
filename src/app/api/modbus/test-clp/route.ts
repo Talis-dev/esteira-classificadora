@@ -452,6 +452,156 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Ler bits de um Holding Register
+    if (action === "readHRBits") {
+      const address = parseInt(body.address);
+
+      if (isNaN(address)) {
+        return NextResponse.json(
+          { error: "Endereço inválido" },
+          { status: 400 },
+        );
+      }
+
+      if (!testClient) {
+        return NextResponse.json(
+          { error: "Modo client não está ativo" },
+          { status: 400 },
+        );
+      }
+
+      const result = await testClient.readHoldingRegisterBits(address);
+
+      if (!result.success) {
+        return NextResponse.json(
+          { error: result.error || "Erro ao ler bits" },
+          { status: 500 },
+        );
+      }
+
+      testHistory.push({
+        timestamp: Date.now(),
+        action: "readHRBits",
+        mode: "client",
+        message: `Lidos 16 bits do HR ${address}`,
+        address,
+        bits: result.bits,
+      });
+
+      return NextResponse.json({
+        success: true,
+        mode: "client",
+        message: `Bits lidos do HR ${address}`,
+        address,
+        bits: result.bits,
+      });
+    }
+
+    // Escrever bit específico em um Holding Register
+    if (action === "writeHRBit") {
+      const address = parseInt(body.address);
+      const bitIndex = parseInt(body.bitIndex);
+      const value = body.value === true || body.value === "true";
+
+      if (isNaN(address) || isNaN(bitIndex) || bitIndex < 0 || bitIndex > 15) {
+        return NextResponse.json(
+          { error: "Endereço ou índice de bit inválido (0-15)" },
+          { status: 400 },
+        );
+      }
+
+      if (!testClient) {
+        return NextResponse.json(
+          { error: "Modo client não está ativo" },
+          { status: 400 },
+        );
+      }
+
+      const success = await testClient.writeHoldingRegisterBit(
+        address,
+        bitIndex,
+        value,
+      );
+
+      if (!success) {
+        return NextResponse.json(
+          { error: "Falha ao escrever bit" },
+          { status: 500 },
+        );
+      }
+
+      testHistory.push({
+        timestamp: Date.now(),
+        action: "writeHRBit",
+        mode: "client",
+        message: `Bit ${bitIndex} do HR ${address} definido para ${value ? "ON" : "OFF"}`,
+        address,
+        bitIndex,
+        value,
+      });
+
+      return NextResponse.json({
+        success: true,
+        mode: "client",
+        message: `Bit ${bitIndex} do HR ${address} definido para ${value ? "ON" : "OFF"}`,
+        address,
+        bitIndex,
+        value,
+      });
+    }
+
+    // Pulso em bit de Holding Register
+    if (action === "pulseHRBit") {
+      const address = parseInt(body.address);
+      const bitIndex = parseInt(body.bitIndex);
+      const duration = parseInt(body.duration) || 1000;
+
+      if (isNaN(address) || isNaN(bitIndex) || bitIndex < 0 || bitIndex > 15) {
+        return NextResponse.json(
+          { error: "Endereço ou índice de bit inválido (0-15)" },
+          { status: 400 },
+        );
+      }
+
+      if (!testClient) {
+        return NextResponse.json(
+          { error: "Modo client não está ativo" },
+          { status: 400 },
+        );
+      }
+
+      testHistory.push({
+        timestamp: Date.now(),
+        action: "pulseHRBit_start",
+        mode: "client",
+        message: `Pulso iniciado no bit ${bitIndex} do HR ${address} por ${duration}ms`,
+        address,
+        bitIndex,
+        duration,
+      });
+
+      // Executa pulso de forma assíncrona
+      testClient.pulseHoldingRegisterBit(address, bitIndex, duration).then(() => {
+        testHistory.push({
+          timestamp: Date.now(),
+          action: "pulseHRBit_end",
+          mode: "client",
+          message: `Pulso finalizado no bit ${bitIndex} do HR ${address}`,
+          address,
+          bitIndex,
+        });
+      });
+
+      return NextResponse.json({
+        success: true,
+        mode: "client",
+        message: `Pulso de ${duration}ms iniciado no bit ${bitIndex} do HR ${address}`,
+        address,
+        bitIndex,
+        duration,
+      });
+    }
+
     // Obter status
     if (action === "status") {
       const currentMode = testServer ? "server" : testClient ? "client" : null;

@@ -12,10 +12,18 @@ interface SystemLog {
   data?: any;
 }
 
+interface HRBitState {
+  value: number;
+  bits: boolean[];
+  lastRead: number;
+}
+
 export default function TestCLPPage() {
   const [serverRunning, setServerRunning] = useState(false);
   const [testMode, setTestMode] = useState<"server" | "client">("server");
-  const [currentMode, setCurrentMode] = useState<"server" | "client" | null>(null);
+  const [currentMode, setCurrentMode] = useState<"server" | "client" | null>(
+    null,
+  );
   const [port, setPort] = useState(502);
   const [host, setHost] = useState("192.168.3.115");
   const [serverIp, setServerIp] = useState("0.0.0.0");
@@ -28,18 +36,29 @@ export default function TestCLPPage() {
   const [selectedCoil, setSelectedCoil] = useState(0);
   const [duration, setDuration] = useState(1000);
   const [coilValues, setCoilValues] = useState<boolean[]>([]);
-  const [quickAccessMode, setQuickAccessMode] = useState<"pulse" | "toggle">("pulse");
+  const [quickAccessMode, setQuickAccessMode] = useState<"pulse" | "toggle">(
+    "pulse",
+  );
   const [toggledCoils, setToggledCoils] = useState<Set<number>>(new Set());
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [logsPaused, setLogsPaused] = useState(true); // Iniciar pausado
   const [mainSystemRunning, setMainSystemRunning] = useState(false);
-  
+
+  // Estados para Holding Registers como BITS (16 HRs, cada um com 16 bits)
+  const [hrBitsEnabled, setHrBitsEnabled] = useState<Set<number>>(new Set([1])); // HR1 habilitado por padrão
+  const [hrBitsState, setHrBitsState] = useState<Map<number, HRBitState>>(
+    new Map(),
+  );
+  const [selectedPulseDuration, setSelectedPulseDuration] = useState(1000);
+
   // Estados para Holding Registers (HR)
-  const [enabledHRs, setEnabledHRs] = useState<Set<number>>(new Set([ 1, 2, 3, 4, 5, 6])); // HR 1-6 habilitados por padrão (tempos de motor)
+  const [enabledHRs, setEnabledHRs] = useState<Set<number>>(
+    new Set([1, 2, 3, 4, 5, 6]),
+  ); // HR 1-6 habilitados por padrão (tempos de motor)
   const [hrValues, setHrValues] = useState<Map<number, number>>(new Map());
   const [editingHR, setEditingHR] = useState<number | null>(null);
   const [editValue, setEditValue] = useState<string>("");
-  
+
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,7 +79,7 @@ export default function TestCLPPage() {
     // Cleanup: desconectar quando página for desmontada ou recarregada
     return () => {
       clearInterval(interval);
-      
+
       // Se estava rodando, desconectar
       if (serverRunning) {
         fetch("/api/modbus/test-clp", {
@@ -137,8 +156,8 @@ export default function TestCLPPage() {
       const response = await fetch("/api/modbus/test-clp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          action: "start", 
+        body: JSON.stringify({
+          action: "start",
           mode: testMode,
           port,
           host: testMode === "client" ? host : undefined,
@@ -355,6 +374,117 @@ export default function TestCLPPage() {
     });
   };
 
+  // ============================================
+  // FUNÇÕES PARA HOLDING REGISTERS COMO BITS
+  // ============================================
+
+  const readHRBits = async (hrAddress: number) => {
+    try {
+      const response = await fetch("/api/modbus/test-clp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "readHRBits",
+          address: hrAddress,
+        }),
+      });
+      const data = await response.json();
+      if (data.success && data.bits) {
+        setHrBitsState((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(hrAddress, {
+            value: data.bits.reduce(
+              (acc: number, bit: boolean, idx: number) =>
+                acc | (bit ? 1 << idx : 0),
+              0,
+            ),
+            bits: data.bits,
+            lastRead: Date.now(),
+          });
+          return newMap;
+        });
+      } else {
+        console.error(`Erro ao ler HR ${hrAddress}: ${data.error}`);
+      }
+    } catch (error: any) {
+      console.error(`Erro: ${error.message}`);
+    }
+  };
+
+  const readAllHRBits = async () => {
+    for (const hr of Array.from(hrBitsEnabled)) {
+      await readHRBits(hr);
+    }
+  };
+
+  const writeHRBit = async (
+    hrAddress: number,
+    bitIndex: number,
+    value: boolean,
+  ) => {
+    try {
+      const response = await fetch("/api/modbus/test-clp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "writeHRBit",
+          address: hrAddress,
+          bitIndex,
+          value,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        // Atualiza estado local imediatamente
+        await readHRBits(hrAddress);
+      } else {
+        console.error(`Erro ao escrever bit: ${data.error}`);
+      }
+    } catch (error: any) {
+      console.error(`Erro: ${error.message}`);
+    }
+  };
+
+  const pulseHRBit = async (
+    hrAddress: number,
+    bitIndex: number,
+    duration: number,
+  ) => {
+    try {
+      const response = await fetch("/api/modbus/test-clp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "pulseHRBit",
+          address: hrAddress,
+          bitIndex,
+          duration,
+        }),
+      });
+      const data = await response.json();
+      if (!data.success) {
+        console.error(`Erro ao enviar pulso: ${data.error}`);
+      } else {
+        // Re-lê após o pulso
+        setTimeout(() => readHRBits(hrAddress), duration + 100);
+      }
+    } catch (error: any) {
+      console.error(`Erro: ${error.message}`);
+    }
+  };
+
+  const toggleHRBitsEnabled = (hr: number) => {
+    setHrBitsEnabled((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(hr)) {
+        newSet.delete(hr);
+      } else {
+        newSet.add(hr);
+      }
+      return newSet;
+    });
+  };
+
   const clearLogs = async () => {
     try {
       await fetch("/api/system/logs", { method: "DELETE" });
@@ -459,7 +589,9 @@ export default function TestCLPPage() {
 
                 {serverRunning && currentMode && (
                   <div className="px-4 py-2 rounded-lg bg-purple-500/20 border border-purple-500/50 flex items-center gap-2">
-                    <span className="text-lg">{currentMode === "server" ? "🖥️" : "🔌"}</span>
+                    <span className="text-lg">
+                      {currentMode === "server" ? "🖥️" : "🔌"}
+                    </span>
                     <span className="text-sm font-medium">
                       Modo: {currentMode === "server" ? "Servidor" : "Cliente"}
                     </span>
@@ -544,7 +676,9 @@ export default function TestCLPPage() {
                   >
                     <div className="text-2xl mb-1">🖥️</div>
                     <div className="font-semibold">Servidor</div>
-                    <div className="text-xs opacity-75">Aguardar CLP conectar</div>
+                    <div className="text-xs opacity-75">
+                      Aguardar CLP conectar
+                    </div>
                   </button>
                   <button
                     onClick={() => setTestMode("client")}
@@ -594,7 +728,7 @@ export default function TestCLPPage() {
                   className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-3 text-white text-lg font-mono disabled:opacity-50 focus:outline-none focus:border-blue-500"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  {testMode === "server" 
+                  {testMode === "server"
                     ? "Porta TCP onde o CLP irá conectar"
                     : "Porta TCP do CLP servidor"}
                 </p>
@@ -612,9 +746,7 @@ export default function TestCLPPage() {
                 )}
                 {serverRunning && testMode === "client" && (
                   <div className="mt-3 bg-green-500/10 border border-green-500/50 rounded-lg p-3">
-                    <p className="text-xs text-gray-400 mb-1">
-                      Conectado em:
-                    </p>
+                    <p className="text-xs text-gray-400 mb-1">Conectado em:</p>
                     <p className="text-sm font-mono text-green-400 font-semibold">
                       {host}:{port}
                     </p>
@@ -634,8 +766,8 @@ export default function TestCLPPage() {
                     {mainSystemRunning
                       ? "Sistema Principal Ativo"
                       : testMode === "server"
-                      ? "Iniciar Servidor"
-                      : "Conectar ao CLP"}
+                        ? "Iniciar Servidor"
+                        : "Conectar ao CLP"}
                   </button>
                 ) : connecting ? (
                   <button
@@ -658,11 +790,174 @@ export default function TestCLPPage() {
               </div>
             </div>
 
+            {/* Card: Holding Registers como BITS (Coils no HR) */}
+            <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-xl p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="text-3xl">⚡</div>
+                  <div>
+                    <h2 className="text-2xl font-semibold">
+                      HR como Bits (Coils)
+                    </h2>
+                    <p className="text-xs text-gray-400">
+                      Holding Registers com 16 bits cada
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={readAllHRBits}
+                  disabled={!serverRunning || hrBitsEnabled.size === 0}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors"
+                >
+                  🔄 Ler Todos
+                </button>
+              </div>
+
+              {/* Seleção de quais HRs monitorar */}
+              <div className="mb-4 pb-4 border-b border-slate-700">
+                <label className="block text-sm text-gray-400 mb-2">
+                  Endereços HR ativos (bits):
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map(
+                    (hr) => (
+                      <button
+                        key={hr}
+                        onClick={() => toggleHRBitsEnabled(hr)}
+                        disabled={serverRunning}
+                        className={`px-3 py-1 rounded text-sm font-mono transition-all disabled:opacity-50 ${
+                          hrBitsEnabled.has(hr)
+                            ? "bg-green-600 text-white"
+                            : "bg-slate-700 text-gray-400 hover:bg-slate-600"
+                        }`}
+                      >
+                        HR{hr}
+                      </button>
+                    ),
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  🔒 Bloqueado durante execução. Pare o servidor para modificar.
+                </p>
+              </div>
+
+              {/* Controle de duração de pulso */}
+              <div className="mb-4">
+                <label className="block text-sm text-gray-400 mb-2">
+                  Duração do Pulso (ms):
+                </label>
+                <input
+                  type="number"
+                  min="100"
+                  max="10000"
+                  step="100"
+                  value={selectedPulseDuration}
+                  onChange={(e) =>
+                    setSelectedPulseDuration(parseInt(e.target.value))
+                  }
+                  className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Display dos HRs como bits */}
+              <div className="space-y-4 max-h-[500px] overflow-y-auto custom-scrollbar">
+                {Array.from(hrBitsEnabled).map((hr) => {
+                  const state = hrBitsState.get(hr);
+                  const bits = state?.bits || Array(16).fill(false);
+                  const value = state?.value || 0;
+                  const lastRead = state?.lastRead;
+
+                  return (
+                    <div
+                      key={hr}
+                      className="bg-slate-900/50 border border-blue-500/50 rounded-lg p-4"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg font-mono text-blue-400 font-semibold">
+                            HR {hr}
+                          </span>
+                          <span className="text-xs text-gray-500 font-mono">
+                            Valor: {value} (0x
+                            {value.toString(16).toUpperCase().padStart(4, "0")})
+                          </span>
+                          {lastRead && (
+                            <span className="text-xs text-gray-600">
+                              {formatTime(lastRead)}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => readHRBits(hr)}
+                          disabled={!serverRunning}
+                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:opacity-50 text-white text-xs rounded transition-colors"
+                        >
+                          🔄 Ler
+                        </button>
+                      </div>
+
+                      {/* Grid de 16 bits */}
+                      <div className="grid grid-cols-8 gap-2">
+                        {bits.map((bitValue, bitIndex) => (
+                          <div key={bitIndex} className="flex flex-col gap-1">
+                            <span className="text-xs text-gray-500 text-center font-mono">
+                              Bit{bitIndex}
+                            </span>
+                            <div className="flex flex-col gap-1">
+                              {/* Botão Toggle */}
+                              <button
+                                onClick={() =>
+                                  writeHRBit(hr, bitIndex, !bitValue)
+                                }
+                                disabled={!serverRunning}
+                                className={`px-2 py-3 rounded text-xs font-mono font-bold transition-all disabled:opacity-50 ${
+                                  bitValue
+                                    ? "bg-green-500 text-white hover:bg-green-600"
+                                    : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+                                }`}
+                              >
+                                {bitValue ? "ON" : "OFF"}
+                              </button>
+                              {/* Botão Pulse */}
+                              <button
+                                onClick={() =>
+                                  pulseHRBit(
+                                    hr,
+                                    bitIndex,
+                                    selectedPulseDuration,
+                                  )
+                                }
+                                disabled={!serverRunning}
+                                className="px-2 py-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:opacity-50 text-white text-xs rounded transition-colors"
+                                title={`Pulso de ${selectedPulseDuration}ms`}
+                              >
+                                ⚡
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {hrBitsEnabled.size === 0 && (
+                <div className="bg-yellow-500/10 border border-yellow-500/50 rounded-lg p-4 text-center">
+                  <p className="text-yellow-400 text-sm">
+                    Nenhum HR habilitado. Selecione endereços acima.
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* Card: Enviar Pulso */}
             <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-xl p-6">
               <div className="flex items-center gap-3 mb-6">
                 <div className="text-3xl">📦</div>
-                <h2 className="text-2xl font-semibold">Enviar Pulso</h2>
+                <h2 className="text-2xl font-semibold">
+                  Enviar Pulso (Legacy)
+                </h2>
               </div>
 
               <div className="grid grid-cols-2 gap-4 mb-4">
@@ -711,7 +1006,9 @@ export default function TestCLPPage() {
                       type="checkbox"
                       checked={quickAccessMode === "toggle"}
                       onChange={(e) =>
-                        setQuickAccessMode(e.target.checked ? "toggle" : "pulse")
+                        setQuickAccessMode(
+                          e.target.checked ? "toggle" : "pulse",
+                        )
                       }
                       className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-purple-600 focus:ring-purple-500"
                     />
@@ -774,12 +1071,19 @@ export default function TestCLPPage() {
               </div>
             </div>
 
-            {/* Card: Holding Registers (HR) */}
+            {/* Card: Holding Registers (HR) como VALORES INT */}
             <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
                   <div className="text-3xl">🔢</div>
-                  <h2 className="text-2xl font-semibold">Holding Registers (HR)</h2>
+                  <div>
+                    <h2 className="text-2xl font-semibold">
+                      Holding Registers (Valores INT)
+                    </h2>
+                    <p className="text-xs text-gray-400">
+                      Valores de 0 a 65535
+                    </p>
+                  </div>
                 </div>
                 <button
                   onClick={readHoldingRegisters}
@@ -791,107 +1095,109 @@ export default function TestCLPPage() {
               </div>
 
               <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
-                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((hr) => (
-                  <div
-                    key={hr}
-                    className={`flex items-center gap-3 p-3 rounded-lg border ${
-                      enabledHRs.has(hr)
-                        ? "bg-slate-900/50 border-blue-500/50"
-                        : "bg-slate-900/30 border-slate-600"
-                    }`}
-                  >
-                    {/* Checkbox */}
-                    <input
-                      type="checkbox"
-                      checked={enabledHRs.has(hr)}
-                      onChange={() => toggleHREnabled(hr)}
-                      disabled={serverRunning}
-                      className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
-                    />
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map(
+                  (hr) => (
+                    <div
+                      key={hr}
+                      className={`flex items-center gap-3 p-3 rounded-lg border ${
+                        enabledHRs.has(hr)
+                          ? "bg-slate-900/50 border-blue-500/50"
+                          : "bg-slate-900/30 border-slate-600"
+                      }`}
+                    >
+                      {/* Checkbox */}
+                      <input
+                        type="checkbox"
+                        checked={enabledHRs.has(hr)}
+                        onChange={() => toggleHREnabled(hr)}
+                        disabled={serverRunning}
+                        className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                      />
 
-                    {/* Label HR */}
-                    <span className="text-sm font-mono text-gray-400 w-16">
-                      HR {hr}
-                    </span>
+                      {/* Label HR */}
+                      <span className="text-sm font-mono text-gray-400 w-16">
+                        HR {hr}
+                      </span>
 
-                    {/* Valor */}
-                    {editingHR === hr ? (
-                      <div className="flex-1 flex gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          max="65535"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          className="flex-1 bg-slate-800 border border-blue-500 rounded px-3 py-1 text-white font-mono text-sm focus:outline-none"
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
+                      {/* Valor */}
+                      {editingHR === hr ? (
+                        <div className="flex-1 flex gap-2">
+                          <input
+                            type="number"
+                            min="0"
+                            max="65535"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            className="flex-1 bg-slate-800 border border-blue-500 rounded px-3 py-1 text-white font-mono text-sm focus:outline-none"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                const val = parseInt(editValue);
+                                if (!isNaN(val) && val >= 0 && val <= 65535) {
+                                  writeHoldingRegister(hr, val);
+                                }
+                              } else if (e.key === "Escape") {
+                                setEditingHR(null);
+                                setEditValue("");
+                              }
+                            }}
+                          />
+                          <button
+                            onClick={() => {
                               const val = parseInt(editValue);
                               if (!isNaN(val) && val >= 0 && val <= 65535) {
                                 writeHoldingRegister(hr, val);
                               }
-                            } else if (e.key === "Escape") {
+                            }}
+                            className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded"
+                          >
+                            ✓
+                          </button>
+                          <button
+                            onClick={() => {
                               setEditingHR(null);
                               setEditValue("");
-                            }
-                          }}
-                        />
-                        <button
-                          onClick={() => {
-                            const val = parseInt(editValue);
-                            if (!isNaN(val) && val >= 0 && val <= 65535) {
-                              writeHoldingRegister(hr, val);
-                            }
-                          }}
-                          className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded"
-                        >
-                          ✓
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingHR(null);
-                            setEditValue("");
-                          }}
-                          className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex-1 flex items-center justify-between">
-                        <span
-                          className={`font-mono text-sm ${
-                            hrValues.has(hr)
-                              ? "text-green-400 font-semibold"
-                              : "text-gray-600 italic"
-                          }`}
-                        >
-                          {hrValues.has(hr)
-                            ? `${hrValues.get(hr)} (0x${hrValues.get(hr)?.toString(16).toUpperCase().padStart(4, "0")})`
-                            : "Não lido"}
-                        </span>
-                        <button
-                          onClick={() => {
-                            setEditingHR(hr);
-                            setEditValue(hrValues.get(hr)?.toString() || "0");
-                          }}
-                          disabled={!serverRunning || !enabledHRs.has(hr)}
-                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:opacity-50 text-white text-xs rounded transition-colors"
-                        >
-                          ✏️ Escrever
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                            }}
+                            className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex-1 flex items-center justify-between">
+                          <span
+                            className={`font-mono text-sm ${
+                              hrValues.has(hr)
+                                ? "text-green-400 font-semibold"
+                                : "text-gray-600 italic"
+                            }`}
+                          >
+                            {hrValues.has(hr)
+                              ? `${hrValues.get(hr)} (0x${hrValues.get(hr)?.toString(16).toUpperCase().padStart(4, "0")})`
+                              : "Não lido"}
+                          </span>
+                          <button
+                            onClick={() => {
+                              setEditingHR(hr);
+                              setEditValue(hrValues.get(hr)?.toString() || "0");
+                            }}
+                            disabled={!serverRunning || !enabledHRs.has(hr)}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:opacity-50 text-white text-xs rounded transition-colors"
+                          >
+                            ✏️ Escrever
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ),
+                )}
               </div>
 
-              <div className="mt-4 bg-yellow-500/10 border border-yellow-500/50 rounded-lg p-3">
-                <p className="text-xs text-yellow-400">
-                  <strong>💡 Dica:</strong> HR 1-6 são os tempos de motor ativo
-                  (em ms) configurados no sistema principal. Desabilite HRs não
-                  existentes no CLP para evitar timeout.
+              <div className="mt-4 bg-blue-500/10 border border-blue-500/50 rounded-lg p-3">
+                <p className="text-xs text-blue-400">
+                  <strong>💡 CLP Schneider:</strong> Este CLP usa Holding
+                  Registers para tudo. Acima estão os HRs como bits (coils),
+                  aqui os HRs como valores inteiros (0-65535).
                 </p>
               </div>
             </div>
@@ -976,7 +1282,9 @@ export default function TestCLPPage() {
                           <div className="text-xs opacity-75">
                             #{selectedCoil + index}
                           </div>
-                          <div className="font-bold">{value ? "ON" : "OFF"}</div>
+                          <div className="font-bold">
+                            {value ? "ON" : "OFF"}
+                          </div>
                         </div>
                       ))}
                     </div>
