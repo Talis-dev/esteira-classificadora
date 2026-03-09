@@ -234,6 +234,24 @@ export class ConveyorController {
   }
 
   /**
+   * Trata acionamento de emergência
+   * Fecha válvulas e cancela acionamentos, mas mantém sistema rodando
+   */
+  private async handleEmergency(): Promise<void> {
+    // Fecha todas as válvulas imediatamente
+    await this.deactivateAllValves();
+
+    // Cancela todos os produtos rastreados (acionamentos pendentes)
+    const canceledCount = this.state.trackedProducts.length;
+    this.state.trackedProducts = [];
+
+    systemLogger.warning(
+      "Conveyor",
+      `🚨 Emergência: ${canceledCount} acionamentos cancelados, válvulas fechadas`,
+    );
+  }
+
+  /**
    * Aplica modos manuais forçados (force-open, force-closed)
    * Método público para permitir aplicação imediata ao alterar configuração
    */
@@ -389,8 +407,16 @@ export class ConveyorController {
       case "emergency":
         this.state.inputs.emergencyPressed = !isNormal;
         if (!isNormal) {
-          systemLogger.error("Conveyor", "Emergência acionada!");
-          await this.stop();
+          systemLogger.error(
+            "Conveyor",
+            "⚠️ Emergência acionada! Fechando válvulas...",
+          );
+          await this.handleEmergency();
+        } else {
+          systemLogger.info(
+            "Conveyor",
+            "✅ Emergência liberada - sistema normalizado",
+          );
         }
         break;
 
@@ -405,6 +431,15 @@ export class ConveyorController {
    */
   private async handleProductDetection(timestamp: number): Promise<void> {
     const config = getCachedConveyorConfig();
+
+    // Ignora detecção se emergência estiver acionada
+    if (this.state.inputs.emergencyPressed) {
+      systemLogger.debug(
+        "Conveyor",
+        "🚨 Produto ignorado - emergência acionada",
+      );
+      return;
+    }
 
     // Determina qual saída deve receber o produto
     const targetOutput = this.determineTargetOutput();
@@ -572,6 +607,11 @@ export class ConveyorController {
   private async processTrackedProducts(): Promise<void> {
     const now = Date.now();
     const config = getCachedConveyorConfig();
+
+    // Não processa acionamentos se emergência estiver acionada
+    if (this.state.inputs.emergencyPressed) {
+      return;
+    }
 
     for (const product of this.state.trackedProducts) {
       if (
