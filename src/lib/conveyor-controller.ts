@@ -495,14 +495,19 @@ export class ConveyorController {
     // MODO MANUAL: Usa targetPerMinute individual para cada saída
     if (mode === "manual") {
       for (const output of enabledOutputs) {
-        const currentMinuteCount =
+        // Conta produtos já ativados neste minuto + produtos agendados (waiting)
+        const activatedCount =
           this.state.stats.outputCountsPerMinute[output.id] || 0;
+        const scheduledCount = this.state.trackedProducts.filter(
+          (p) => p.outputId === output.id && p.status === "waiting",
+        ).length;
+        const totalCount = activatedCount + scheduledCount;
 
         // Se targetPerMinute é 0, aceita ilimitado
-        // Se não atingiu a meta do minuto, aceita
+        // Se não atingiu a meta do minuto (considerando agendados), aceita
         if (
           output.targetPerMinute === 0 ||
-          currentMinuteCount < output.targetPerMinute
+          totalCount < output.targetPerMinute
         ) {
           return output;
         }
@@ -514,11 +519,14 @@ export class ConveyorController {
     if (mode === "equal") {
       // Verifica se todas atingiram meta
       const outputsWithSpace = enabledOutputs.filter((output) => {
-        const currentMinuteCount =
+        const activatedCount =
           this.state.stats.outputCountsPerMinute[output.id] || 0;
+        const scheduledCount = this.state.trackedProducts.filter(
+          (p) => p.outputId === output.id && p.status === "waiting",
+        ).length;
+        const totalCount = activatedCount + scheduledCount;
         return (
-          output.targetPerMinute === 0 ||
-          currentMinuteCount < output.targetPerMinute
+          output.targetPerMinute === 0 || totalCount < output.targetPerMinute
         );
       });
 
@@ -530,8 +538,12 @@ export class ConveyorController {
       let attempts = 0;
       while (attempts < enabledOutputs.length) {
         const currentOutput = enabledOutputs[this.state.nextOutputIndex];
-        const currentMinuteCount =
+        const activatedCount =
           this.state.stats.outputCountsPerMinute[currentOutput.id] || 0;
+        const scheduledCount = this.state.trackedProducts.filter(
+          (p) => p.outputId === currentOutput.id && p.status === "waiting",
+        ).length;
+        const totalCount = activatedCount + scheduledCount;
 
         // Próximo índice (circular)
         this.state.nextOutputIndex =
@@ -540,7 +552,7 @@ export class ConveyorController {
         // Verifica se tem espaço
         if (
           currentOutput.targetPerMinute === 0 ||
-          currentMinuteCount < currentOutput.targetPerMinute
+          totalCount < currentOutput.targetPerMinute
         ) {
           return currentOutput;
         }
@@ -573,21 +585,32 @@ export class ConveyorController {
       for (const output of enabledOutputs) {
         if (output.targetPerMinute === 0) continue;
 
-        const currentMinuteCount =
+        const activatedCount =
           this.state.stats.outputCountsPerMinute[output.id] || 0;
+        const scheduledCount = this.state.trackedProducts.filter(
+          (p) => p.outputId === output.id && p.status === "waiting",
+        ).length;
+        const totalCount = activatedCount + scheduledCount;
 
         // Já atingiu meta? Pula
-        if (currentMinuteCount >= output.targetPerMinute) {
+        if (totalCount >= output.targetPerMinute) {
           continue;
         }
 
         // Calcula quanto falta para atingir proporção ideal
         const expectedRatio = output.targetPerMinute / totalPerMinute;
-        const totalSent = Object.values(
-          this.state.stats.outputCountsPerMinute,
-        ).reduce((a, b) => a + b, 0);
+
+        // Conta total de produtos enviados (ativados + agendados) para todas as saídas
+        const totalSent = enabledOutputs.reduce((sum, o) => {
+          const activated = this.state.stats.outputCountsPerMinute[o.id] || 0;
+          const scheduled = this.state.trackedProducts.filter(
+            (p) => p.outputId === o.id && p.status === "waiting",
+          ).length;
+          return sum + activated + scheduled;
+        }, 0);
+
         const expectedCount = totalSent * expectedRatio;
-        const deficit = expectedCount - currentMinuteCount;
+        const deficit = expectedCount - totalCount;
 
         if (deficit > maxDeficit) {
           maxDeficit = deficit;
