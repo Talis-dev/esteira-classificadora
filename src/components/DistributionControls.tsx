@@ -150,14 +150,15 @@ export default function DistributionControls() {
         </label>
         <div className="grid grid-cols-3 gap-3">
           {config.conveyorOutputs.map((output) => (
-            <div key={output.id} className="flex flex-col">
-              <label className="text-xs text-gray-600 mb-1">
+            <div key={output.id} className="flex flex-col w-fit">
+              <label className="text-sm text-gray-600 mb-1">
                 {output.name}
               </label>
               <div className="relative">
                 <input
                   type="number"
                   min="0"
+                  step="1"
                   value={targets[output.id] || 0}
                   onChange={(e) =>
                     setTargets({
@@ -167,13 +168,13 @@ export default function DistributionControls() {
                   }
                   disabled={!output.enabled}
                   className={cn(
-                    "w-full px-3 py-2 border rounded-lg text-sm",
+                    "w-52 px-3 py-2 border rounded-lg text-lg font-medium transition-all",
                     output.enabled
                       ? "border-gray-300 focus:ring-2 focus:ring-blue-500"
-                      : "bg-gray-100 border-gray-200 cursor-not-allowed",
+                      : "bg-gray-200 border-gray-300 cursor-not-allowed",
                   )}
                 />
-                <span className="absolute right-3 top-2 text-xs text-gray-400">
+                <span className="absolute right-8 top-2 text-lg text-gray-400">
                   /min
                 </span>
               </div>

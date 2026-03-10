@@ -50,7 +50,7 @@ export default function DashboardPage() {
           {/* Coluna Direita */}
           <div className="space-y-3 lg:space-y-4">
             <ConveyorMonitor />
-            <SystemLogs />
+            {/* <SystemLogs /> */}
           </div>
         </div>
       </main>

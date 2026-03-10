@@ -11,8 +11,11 @@ import {
   SignalSlashIcon,
   CheckCircleIcon,
   BoltIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
+
 import { cn } from "@/lib/utils";
+import { CheckIcon, LockClosedIcon, LockOpenIcon, StopCircleIcon } from "@heroicons/react/24/solid";
 
 export default function ConveyorMonitor() {
   const [systemState, setSystemState] = useState<ConveyorSystemState | null>(
@@ -122,12 +125,12 @@ export default function ConveyorMonitor() {
       {/* Inputs Status */}
       <div className="border rounded-lg p-2">
         <h3 className="font-semibold text-sm mb-2 text-gray-700">
-          Entradas (HR16)
+          Entradas
         </h3>
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div
             className={cn(
-              "flex items-center gap-1",
+              "flex items-center gap-1 font-semibold",
               systemState.inputs.motorRunning
                 ? "text-green-600"
                 : "text-gray-400",
@@ -140,33 +143,33 @@ export default function ConveyorMonitor() {
           </div>
           <div
             className={cn(
-              "flex items-center gap-1",
+              "flex items-center gap-1 font-semibold",
               systemState.inputs.doorOpen ? "text-red-600" : "text-green-600",
             )}
           >
             <span>
               {systemState.inputs.doorOpen
-                ? "🚪 Porta Aberta"
-                : "🔒 Porta Fechada"}
+                ? <><LockOpenIcon className="w-4 h-4 inline justify-center" /> Porta Aberta</>
+                : <><LockClosedIcon className="w-4 h-4 inline justify-center" /> Porta Fechada</>}
             </span>
           </div>
           <div
             className={cn(
-              "flex items-center gap-1",
+              "flex items-center gap-1 font-semibold",
               systemState.inputs.emergencyPressed
                 ? "text-red-600 font-bold"
-                : "text-gray-400",
+                : "text-green-600",
             )}
           >
             <span>
               {systemState.inputs.emergencyPressed
-                ? "⚠️ EMERGÊNCIA"
-                : "✓ Emergência OK"}
+                ? <><StopCircleIcon className="w-4 h-4 inline justify-center" /> EMERGÊNCIA</>
+                : <><CheckIcon className="w-4 h-4 inline justify-center" /> Emergência OK</>}
             </span>
           </div>
           <div
             className={cn(
-              "flex items-center gap-1",
+              "flex items-center gap-1 font-semibold",
               systemState.inputs.inverterFault
                 ? "text-red-600"
                 : "text-green-600",
@@ -174,8 +177,8 @@ export default function ConveyorMonitor() {
           >
             <span>
               {systemState.inputs.inverterFault
-                ? "❌ Inversor Falha"
-                : "✓ Inversor OK"}
+                ? <><XMarkIcon className="w-4 h-4 inline justify-center" /> Inversor Falha</>
+                : <> <CheckIcon className="w-4 h-4 inline justify-center" /> Inversor OK</>}
             </span>
           </div>
         </div>
@@ -184,7 +187,7 @@ export default function ConveyorMonitor() {
       {/* Outputs Status */}
       <div className="border rounded-lg p-2">
         <h3 className="font-semibold text-sm mb-2 text-gray-700">
-          Saídas (HR1)
+          Saídas
         </h3>
         <div className="grid grid-cols-3 gap-2">
           {[1, 2, 3].map((id) => {

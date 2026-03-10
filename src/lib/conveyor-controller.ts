@@ -230,7 +230,7 @@ export class ConveyorController {
 
       this.state.lastMinuteReset = Date.now();
 
-      systemLogger.info("Conveyor", "📊 Contadores por minuto resetados");
+      systemLogger.info("Conveyor", " Contadores por minuto resetados");
     }, 60000); // 60 segundos
   }
 
@@ -648,12 +648,7 @@ export class ConveyorController {
     const now = Date.now();
     const config = getCachedConveyorConfig();
 
-    // DEBUG: Log de produtos rastreados
-    if (this.state.trackedProducts.length > 0) {
-      console.log(
-        `[DEBUG] ${this.state.trackedProducts.length} produtos rastreados`,
-      );
-    }
+  
 
     // Não processa acionamentos se emergência estiver acionada
     if (this.state.inputs.emergencyPressed) {
@@ -663,12 +658,6 @@ export class ConveyorController {
 
     for (const product of this.state.trackedProducts) {
       const timeUntilActivation = product.scheduledActivationTime - now;
-
-      if (product.status === "waiting") {
-        console.log(
-          `[DEBUG] Produto ${product.id.substring(0, 8)} aguardando - faltam ${timeUntilActivation}ms`,
-        );
-      }
 
       if (
         product.status === "waiting" &&
@@ -694,7 +683,6 @@ export class ConveyorController {
         if (output) {
           // Marca como ativado ANTES para evitar loop infinito se falhar
           product.status = "activated";
-          console.log(`[DEBUG] Marcado como activated ANTES de chamar valve`);
 
           try {
             await this.activateValve(output);

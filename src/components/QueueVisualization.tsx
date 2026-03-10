@@ -124,7 +124,7 @@ function ProductCard({ product }: { product: TrackedProduct }) {
             "px-1.5 xl:px-2 py-0.5 rounded text-xs font-medium",
             product.status === "waiting" && "bg-yellow-100 text-yellow-700",
             product.status === "activated" && "bg-green-100 text-green-700",
-            product.status === "passed" && "bg-gray-100 text-gray-600",
+            product.status === "passed" && "bg-gray-100 text-green-600",
           )}
         >
           {product.status === "waiting" && "Aguardando"}
