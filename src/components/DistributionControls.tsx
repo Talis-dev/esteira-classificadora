@@ -109,35 +109,35 @@ export default function DistributionControls() {
           <button
             onClick={() => setDistributionMode("manual")}
             className={cn(
-              "py-2.5 sm:py-2 px-3 sm:px-4 rounded-lg text-sm sm:text-base font-medium transition-all",
+              "py-2 px-3 sm:px-4 rounded-lg text-sm sm:text-base font-medium transition-all",
               distributionMode === "manual"
                 ? "bg-blue-600 text-white ring-2 ring-blue-400"
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200",
             )}
           >
-            Manual
+          * Sequencial
           </button>
           <button
             onClick={() => setDistributionMode("equal")}
             className={cn(
-              "py-2.5 sm:py-2 px-3 sm:px-4 rounded-lg text-sm sm:text-base font-medium transition-all",
+              "py-2 px-3 sm:px-4 rounded-lg text-sm sm:text-base font-medium transition-all",
               distributionMode === "equal"
                 ? "bg-green-600 text-white ring-2 ring-green-400"
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200",
             )}
           >
-            Igual
+          = Igual
           </button>
           <button
             onClick={() => setDistributionMode("percentage")}
             className={cn(
-              "py-2.5 sm:py-2 px-3 sm:px-4 rounded-lg text-sm sm:text-base font-medium transition-all",
+              "py-2 px-3 sm:px-4 rounded-lg text-sm sm:text-base font-medium transition-all",
               distributionMode === "percentage"
                 ? "bg-purple-600 text-white ring-2 ring-purple-400"
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200",
             )}
           >
-            Porcentagem
+          % Porcentagem
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-2">

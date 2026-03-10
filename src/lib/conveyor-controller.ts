@@ -5,6 +5,7 @@
 
 import { ModbusClient } from "./modbus-client";
 import { systemLogger } from "./system-logger";
+import countLogger from "./count-logger";
 import {
   getCachedConveyorConfig,
   updateConveyorConfig,
@@ -713,6 +714,13 @@ export class ConveyorController {
 
           const minuteCount = this.state.stats.outputCountsPerMinute[output.id];
           const target = output.targetPerMinute || 0;
+
+          // Registra contagem
+          countLogger.record(
+            output.id,
+            output.name,
+            this.state.stats.outputCounts[output.id],
+          );
 
           systemLogger.success(
             "Conveyor",
