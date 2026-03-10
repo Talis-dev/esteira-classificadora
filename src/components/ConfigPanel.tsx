@@ -11,6 +11,9 @@ import {
   ArrowPathIcon,
   CheckIcon,
   BeakerIcon,
+  LockClosedIcon,
+  LockOpenIcon,
+  BoltIcon,
 } from "@heroicons/react/24/outline";
 import Link from "next/link";
 
@@ -18,6 +21,19 @@ export default function ConfigPanel() {
   const [config, setConfig] = useState<ConveyorSystemConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [password, setPassword] = useState("");
+  const [isUnlocked, setIsUnlocked] = useState(false);
+
+  const ADMIN_PASSWORD = "415263";
+
+  const handlePasswordChange = (value: string) => {
+    setPassword(value);
+    if (value === ADMIN_PASSWORD) {
+      setIsUnlocked(true);
+    } else {
+      setIsUnlocked(false);
+    }
+  };
 
   useEffect(() => {
     fetchConfig();
@@ -101,7 +117,8 @@ export default function ConfigPanel() {
         </div>
         <div className="flex gap-2">
           <Link
-            href="/test-clp"
+
+            href={isUnlocked ? "/test-clp" : "#"}
             className="px-4 py-2 rounded-lg border border-purple-300 text-purple-700 hover:bg-purple-50 flex items-center gap-2 transition-colors"
           >
             <BeakerIcon className="w-4 h-4" />
@@ -125,6 +142,54 @@ export default function ConfigPanel() {
         </div>
       </div>
 
+      {/* Campo de Senha para Configurações Avançadas */}
+      <div className="mb-6 p-4 bg-amber-50 border border-amber-300 rounded-lg">
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <label className="text-sm font-semibold text-amber-900 mb-2 flex items-center gap-2">
+              {isUnlocked ? (
+                <>
+                  <LockOpenIcon className="w-5 h-5 text-green-600" />
+                  <span className="text-green-600">
+                    Configurações Avançadas Desbloqueadas
+                  </span>
+                </>
+              ) : (
+                <>
+                  <LockClosedIcon className="w-5 h-5 text-amber-700" />
+                  Senha para Configurações Avançadas
+                </>
+              )}
+            </label>
+            <div className="flex gap-3 items-center">
+              <input
+                type="password"
+                maxLength={6}
+                value={password}
+                onChange={(e) => handlePasswordChange(e.target.value)}
+                className={`w-40 px-3 py-2 border-2 rounded-lg text-center text-lg font-mono tracking-widest ${
+                  isUnlocked
+                    ? "border-green-500 bg-green-50"
+                    : "border-amber-400 focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                }`}
+                placeholder="••••••"
+              />
+              {isUnlocked && (
+                <div className="flex items-center gap-2 text-green-600 font-semibold">
+                  <CheckIcon className="w-5 h-5" />
+                  <span>Acesso liberado</span>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-amber-700 mt-2">
+              {isUnlocked
+                ? "✅ Endereços Modbus, conexão CLP e parâmetros da esteira liberados para edição"
+                : "🔒 Digite a senha para editar conexão CLP, endereços Modbus e parâmetros da esteira"}
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="space-y-6">
         {/* Conexão CLP */}
         <section className="p-4 bg-green-50 rounded-lg border border-green-200">
@@ -145,7 +210,8 @@ export default function ConfigPanel() {
                     connection: { ...config.connection, ip: e.target.value },
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                disabled={!isUnlocked}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="192.168.3.115"
               />
             </div>
@@ -165,7 +231,8 @@ export default function ConfigPanel() {
                     },
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                disabled={!isUnlocked}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="502"
               />
             </div>
@@ -185,7 +252,8 @@ export default function ConfigPanel() {
                     },
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                disabled={!isUnlocked}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="5000"
               />
             </div>
@@ -212,7 +280,8 @@ export default function ConfigPanel() {
                     conveyorDiameter: parseFloat(e.target.value),
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={!isUnlocked}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="0.3"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -232,7 +301,8 @@ export default function ConfigPanel() {
                     rpmPulsesPerRevolution: parseInt(e.target.value),
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={!isUnlocked}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="1"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -252,7 +322,8 @@ export default function ConfigPanel() {
                     readCycleMs: parseInt(e.target.value),
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={!isUnlocked}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="5"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -277,7 +348,8 @@ export default function ConfigPanel() {
                     gearRatio: parseFloat(e.target.value),
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={!isUnlocked}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="1"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -298,7 +370,8 @@ export default function ConfigPanel() {
                     axleDiameter: parseFloat(e.target.value),
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={!isUnlocked}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="0.03"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -318,7 +391,8 @@ export default function ConfigPanel() {
                     triggerDebounceMs: parseInt(e.target.value),
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={!isUnlocked}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="8"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -340,7 +414,8 @@ export default function ConfigPanel() {
                 className="grid grid-cols-6 gap-3 items-center p-3 bg-gray-50 rounded-lg border border-gray-200"
               >
                 <div>
-                  <input
+                  <input 
+                    disabled={!isUnlocked}
                     type="text"
                     value={input.name}
                     onChange={(e) =>
@@ -352,7 +427,7 @@ export default function ConfigPanel() {
                         },
                       })
                     }
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div className="flex gap-1 items-center">
@@ -377,7 +452,8 @@ export default function ConfigPanel() {
                         },
                       })
                     }
-                    className="w-16 px-2 py-1 text-sm border border-gray-300 rounded"
+                    disabled={!isUnlocked}
+                    className="w-16 px-2 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:cursor-not-allowed"
                   />
                   <span className="text-xs text-gray-500">Bit</span>
                   <input
@@ -400,15 +476,25 @@ export default function ConfigPanel() {
                         },
                       })
                     }
-                    className="w-12 px-2 py-1 text-sm border border-gray-300 rounded"
+                    disabled={!isUnlocked}
+                    className="w-12 px-2 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div className="text-sm text-gray-600">
-                  {input.type === "pulse" ? "🔄 Pulso" : "🔌 Digital"}
+                  {input.type === "pulse" ?
+                  <div>
+                    <ArrowPathIcon className="inline-block w-4 h-4 mr-1" />
+                   Pulso
+                  </div>  : <div>
+                    <BoltIcon className="inline-block w-4 h-4 mr-1" />  
+                    Digital
+                  </div>
+                  }
                 </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
+                     disabled={!isUnlocked}
                     checked={input.normallyOn}
                     onChange={(e) =>
                       setConfig({
@@ -425,6 +511,7 @@ export default function ConfigPanel() {
                 </div>
                 <div className="flex items-center gap-2">
                   <input
+                     disabled={!isUnlocked}
                     type="checkbox"
                     checked={input.logChanges}
                     onChange={(e) =>
@@ -442,6 +529,7 @@ export default function ConfigPanel() {
                 </div>
                 <div className="flex items-center gap-2">
                   <input
+                   disabled={!isUnlocked}
                     type="checkbox"
                     checked={input.enabled}
                     onChange={(e) =>
@@ -481,6 +569,7 @@ export default function ConfigPanel() {
               <OutputConfigRow
                 key={output.id}
                 output={output}
+                isUnlocked={isUnlocked}
                 onChange={(updated) => {
                   const newOutputs = [...config.conveyorOutputs];
                   newOutputs[index] = updated;
@@ -491,7 +580,8 @@ export default function ConfigPanel() {
           </div>
           <p className="text-xs text-gray-500 mt-2">
             💡 Delay: tempo do gatilho até acionamento | Ativação: tempo que
-            válvula fica aberta | Por Minuto: meta de peças/min (0 = desabilitado) | Modo Manual: forçar aberto/fechado ou automático
+            válvula fica aberta | Por Minuto: meta de peças/min (0 =
+            desabilitado) | Modo Manual: forçar aberto/fechado ou automático
           </p>
         </section>
       </div>
@@ -502,18 +592,21 @@ export default function ConfigPanel() {
 function OutputConfigRow({
   output,
   onChange,
+  isUnlocked,
 }: {
   output: ConveyorOutput;
   onChange: (output: ConveyorOutput) => void;
+  isUnlocked: boolean;
 }) {
   return (
     <div className="grid grid-cols-7 gap-3 items-center p-3 bg-gray-50 rounded-lg border border-gray-200">
       <div>
         <input
+          disabled={!isUnlocked}
           type="text"
           value={output.name}
           onChange={(e) => onChange({ ...output, name: e.target.value })}
-          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+          className="w-full px-2 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:cursor-not-allowed"
           placeholder="Nome"
         />
       </div>
@@ -530,7 +623,8 @@ function OutputConfigRow({
               address: { ...output.address, hr: parseInt(e.target.value) || 0 },
             })
           }
-          className="w-14 px-1 py-1 text-sm border border-gray-300 rounded"
+          disabled={!isUnlocked}
+          className="w-14 px-1 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:cursor-not-allowed"
         />
         <span className="text-xs text-gray-500">Bit</span>
         <input
@@ -547,11 +641,13 @@ function OutputConfigRow({
               },
             })
           }
-          className="w-10 px-1 py-1 text-sm border border-gray-300 rounded"
+          disabled={!isUnlocked}
+          className="w-10 px-1 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:cursor-not-allowed"
         />
       </div>
       <div>
         <input
+         disabled={!isUnlocked}
           type="number"
           value={output.delayMs}
           onChange={(e) =>
@@ -563,6 +659,7 @@ function OutputConfigRow({
       </div>
       <div>
         <input
+         disabled={!isUnlocked}
           type="number"
           value={output.activationMs}
           onChange={(e) =>
