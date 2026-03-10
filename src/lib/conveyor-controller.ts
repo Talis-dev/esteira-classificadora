@@ -652,7 +652,6 @@ export class ConveyorController {
 
     // Não processa acionamentos se emergência estiver acionada
     if (this.state.inputs.emergencyPressed) {
-      console.log("[DEBUG] Emergência acionada - processamento bloqueado");
       return;
     }
 
@@ -663,22 +662,30 @@ export class ConveyorController {
         product.status === "waiting" &&
         now >= product.scheduledActivationTime
       ) {
-        console.log(
-          `[DEBUG] Tentando ativar produto ${product.id.substring(0, 8)}`,
-        );
-
         const output = config.conveyorOutputs.find(
           (o) => o.id === product.outputId,
         );
 
         if (!output) {
-          console.log(`[DEBUG] Output ${product.outputId} não encontrado!`);
           continue;
         }
 
-        console.log(
-          `[DEBUG] Output encontrado: ${output.name}, modo: ${output.manualMode}`,
-        );
+        // ✅ REVALIDAÇÃO: Verifica se output ainda pode ser ativado
+        // Previne acionamentos indevidos quando config muda após agendar produto
+        const canActivate =
+          output.enabled &&
+          output.manualMode === "auto" &&
+          output.targetPerMinute > 0;
+
+        if (!canActivate) {
+          // Cancela produto se configuração mudou
+          product.status = "cancelled";
+          systemLogger.warning(
+            "Conveyor",
+            `Produto cancelado: ${output.name} não aceita mais produtos (enabled: ${output.enabled}, modo: ${output.manualMode}, meta: ${output.targetPerMinute})`,
+          );
+          continue;
+        }
 
         if (output) {
           // Marca como ativado ANTES para evitar loop infinito se falhar
@@ -686,9 +693,7 @@ export class ConveyorController {
 
           try {
             await this.activateValve(output);
-            console.log(`[DEBUG] activateValve completou para ${output.name}`);
           } catch (error: any) {
-            console.error(`[DEBUG] ERRO em activateValve: ${error.message}`);
             systemLogger.error(
               "Conveyor",
               `Erro ao ativar ${output.name}: ${error.message}`,
@@ -733,10 +738,7 @@ export class ConveyorController {
    * Ativa uma válvula
    */
   private async activateValve(output: ConveyorOutput): Promise<void> {
-    console.log(`[DEBUG activateValve] Iniciando para ${output.name}`);
-
     if (!this.client) {
-      console.log(`[DEBUG activateValve] Cliente não existe!`);
       return;
     }
 
@@ -744,15 +746,8 @@ export class ConveyorController {
       output.manualMode === "disabled" ||
       output.manualMode === "force-closed"
     ) {
-      console.log(
-        `[DEBUG activateValve] Modo manual impediu: ${output.manualMode}`,
-      );
       return;
     }
-
-    console.log(
-      `[DEBUG activateValve] Chamando setHoldingRegisterBit HR${output.address.hr} bit${output.address.bit}`,
-    );
 
     try {
       // Timeout de 2 segundos para evitar travamento
@@ -767,17 +762,12 @@ export class ConveyorController {
 
       const success = await Promise.race([writePromise, timeoutPromise]);
 
-      console.log(
-        `[DEBUG activateValve] setHoldingRegisterBit retornou: ${success}`,
-      );
-
       if (success) {
         this.updateValveState(output.id, true);
       } else {
         this.addError("valve", `Falha ao ativar ${output.name}`);
       }
     } catch (error: any) {
-      console.error(`[DEBUG activateValve] ERRO/TIMEOUT: ${error.message}`);
       this.addError(
         "valve",
         `Timeout/Erro ao ativar ${output.name}: ${error.message}`,

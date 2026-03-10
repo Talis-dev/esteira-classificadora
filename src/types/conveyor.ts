@@ -48,7 +48,7 @@ export interface TrackedProduct {
   outputId: number; // Saída de destino (1-3, ou 0 para passar reto)
   detectedAt: number; // Timestamp quando foi detectado
   scheduledActivationTime: number; // Timestamp programado de ativação da válvula
-  status: "waiting" | "activated" | "passed";
+  status: "waiting" | "activated" | "passed" | "cancelled";
 }
 
 /**

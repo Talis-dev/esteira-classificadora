@@ -55,10 +55,18 @@ export function saveConveyorConfig(config: ConveyorSystemConfig): boolean {
       fs.mkdirSync(dataDir, { recursive: true });
     }
 
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), "utf-8");
+    // Salva de forma síncrona para garantir persistência
+    const jsonContent = JSON.stringify(config, null, 2);
+    fs.writeFileSync(CONFIG_FILE, jsonContent, "utf-8");
+    
+    // Verifica se salvou corretamente
+    const savedContent = fs.readFileSync(CONFIG_FILE, "utf-8");
+    const verification = JSON.parse(savedContent);
+    
+    console.log("[ConveyorConfig] Arquivo salvo e verificado com sucesso");
     return true;
   } catch (error) {
-    console.error("Erro ao salvar configuração da esteira:", error);
+    console.error("[ConveyorConfig] ERRO ao salvar configuração da esteira:", error);
     return false;
   }
 }
@@ -99,12 +107,20 @@ export function updateConveyorConfig(
     ...config,
   };
 
-  if (saveConveyorConfig(newConfig)) {
+  const success = saveConveyorConfig(newConfig);
+  
+  if (success) {
+    // Atualiza cache E força invalidação para garantir consistência
     global.conveyorConfigCache = newConfig;
+    console.log("[ConveyorConfig] Cache atualizado:", {
+      distributionMode: newConfig.distributionMode,
+      readCycleMs: newConfig.readCycleMs,
+    });
     return newConfig;
+  } else {
+    console.error("[ConveyorConfig] FALHA ao salvar arquivo! Mantendo cache antigo.");
+    return currentConfig;
   }
-
-  return currentConfig;
 }
 
 /**

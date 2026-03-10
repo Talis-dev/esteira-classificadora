@@ -45,7 +45,12 @@ export async function POST(request: NextRequest) {
 
     // Atualiza e salva a configuração
     const updatedConfig = updateConveyorConfig(updates);
-    await saveConveyorConfig(updatedConfig);
+    
+    // Força reload do cache na próxima leitura
+    console.log("[API Config] Configuração salva:", {
+      distributionMode: updatedConfig.distributionMode,
+      targets: updatedConfig.conveyorOutputs.map(o => `${o.id}:${o.targetPerMinute}`)
+    });
 
     // Se sistema está rodando, aplica modos manuais imediatamente
     const controller = getController();
