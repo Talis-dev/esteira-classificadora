@@ -104,8 +104,11 @@ export interface ConveyorSystemConfig {
 
   // Configurações da esteira
   readCycleMs: number; // Intervalo de leitura (padrão: 50ms para capturar pulsos rápidos)
-  rpmPulsesPerRevolution: number; // Pulsos por revolução (para cálculo de velocidade)
+  rpmPulsesPerRevolution: number; // Pulsos por revolução do eixo (para cálculo de velocidade)
   conveyorDiameter: number; // Diâmetro do tambor da esteira (metros) para cálculo de velocidade linear
+  gearRatio?: number; // Relação de transmissão eixo:esteira (ex: 10 = eixo gira 10x mais rápido que esteira)
+  axleDiameter?: number; // Diâmetro do eixo de tração (metros) - alternativa ao gearRatio
+  triggerDebounceMs?: number; // Debounce do sensor gatilho em ms (padrão: 8ms) - evita pulsos duplicados
 
   // Sistema ativo
   systemActive: boolean;
@@ -296,9 +299,12 @@ export const DEFAULT_CONVEYOR_CONFIG: ConveyorSystemConfig = {
 
   distributionMode: "manual", // Padrão: manual (usa targetPerMinute individual)
 
-  readCycleMs: 50, // 50ms para capturar pulsos rápidos
-  rpmPulsesPerRevolution: 10, // Exemplo: 10 pulsos por volta
-  conveyorDiameter: 0.3, // Exemplo: 30cm de diâmetro
+  readCycleMs: 5, // 5ms para máxima taxa de captura de pulsos rápidos (200 Hz)
+  rpmPulsesPerRevolution: 1, // 1 pulso por volta do eixo
+  conveyorDiameter: 0.3, // 30cm de diâmetro da esteira
+  gearRatio: 1, // Relação 1:1 (ajustar conforme sistema mecânico)
+  axleDiameter: 0.03, // 30mm de diâmetro do eixo de tração
+  triggerDebounceMs: 8, // 8ms de debounce para evitar pulsos duplicados
 
   systemActive: false,
 };

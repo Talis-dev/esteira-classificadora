@@ -197,10 +197,10 @@ export default function ConfigPanel() {
           <h3 className="text-lg font-semibold text-gray-800 mb-3">
             Parâmetros da Esteira
           </h3>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Diâmetro do Rolo (m)
+                Diâmetro da Esteira (m)
               </label>
               <input
                 type="number"
@@ -216,12 +216,12 @@ export default function ConfigPanel() {
                 placeholder="0.3"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Diâmetro do rolo principal em metros
+                Diâmetro do tambor principal da esteira (metros)
               </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Pulsos por Revolução
+                Pulsos por Volta do Eixo
               </label>
               <input
                 type="number"
@@ -233,10 +233,10 @@ export default function ConfigPanel() {
                   })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="10"
+                placeholder="1"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Quantidade de pulsos do sensor por volta completa
+                Pulsos do sensor RPM por volta do eixo de tração
               </p>
             </div>
             <div>
@@ -253,10 +253,76 @@ export default function ConfigPanel() {
                   })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="50"
+                placeholder="5"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Intervalo de leitura dos sensores (50ms recomendado)
+                Intervalo de leitura (5ms = 200 Hz, captura pulsos rápidos)
+              </p>
+            </div>
+          </div>
+
+          {/* Segunda linha de parâmetros */}
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Relação de Transmissão (Gear Ratio)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                value={config.gearRatio ?? 1}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    gearRatio: parseFloat(e.target.value),
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="1"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Relação velocidade eixo:esteira (ex: 10 = eixo 10x mais rápido)
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Diâmetro do Eixo de Tração (m)
+              </label>
+              <input
+                type="number"
+                step="0.001"
+                value={config.axleDiameter ?? 0.03}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    axleDiameter: parseFloat(e.target.value),
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="0.03"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Diâmetro do eixo onde está o sensor RPM (ex: 0.03 = 30mm)
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Debounce Sensor Gatilho (ms)
+              </label>
+              <input
+                type="number"
+                value={config.triggerDebounceMs ?? 8}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    triggerDebounceMs: parseInt(e.target.value),
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="8"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Tempo mínimo entre pulsos do gatilho (evita duplicatas)
               </p>
             </div>
           </div>
@@ -406,7 +472,7 @@ export default function ConfigPanel() {
             <div>Endereço</div>
             <div>Delay (ms)</div>
             <div>Ativação (ms)</div>
-            <div>Meta</div>
+            <div>Por Minuto</div>
             <div>Modo Manual</div>
             <div className="text-center">Ativo</div>
           </div>
@@ -425,7 +491,7 @@ export default function ConfigPanel() {
           </div>
           <p className="text-xs text-gray-500 mt-2">
             💡 Delay: tempo do gatilho até acionamento | Ativação: tempo que
-            válvula fica aberta | Meta: quantidade alvo (0 = ilimitado)
+            válvula fica aberta | Por Minuto: meta de peças/min (0 = ilimitado)
           </p>
         </section>
       </div>
@@ -509,15 +575,15 @@ function OutputConfigRow({
       <div>
         <input
           type="number"
-          value={output.targetCount}
+          value={output.targetPerMinute}
           onChange={(e) =>
-            onChange({ ...output, targetCount: parseInt(e.target.value) })
+            onChange({ ...output, targetPerMinute: parseInt(e.target.value) })
           }
           className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
           placeholder="0"
         />
         <p className="text-xs text-gray-400 mt-1">
-          {output.currentCount}/{output.targetCount || "∞"}
+          {output.currentCount}/{output.targetPerMinute || "∞"}
         </p>
       </div>
       <div>

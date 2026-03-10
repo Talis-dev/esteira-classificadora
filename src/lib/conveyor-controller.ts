@@ -63,6 +63,7 @@ export class ConveyorController {
   // Controle de pulsos
   private lastInputStates: Map<string, boolean> = new Map();
   private inputStuckTimestamps: Map<string, number> = new Map(); // Tracking de inputs travados
+  private lastPulseTimestamps: Map<string, number> = new Map(); // Debounce de pulsos (evita duplicatas)
   private rpmPulseCount: number = 0;
   private rpmLastCheckTime: number = Date.now();
   private startTime: number = 0;
@@ -288,11 +289,16 @@ export class ConveyorController {
 
   /**
    * Processa os inputs lidos do CLP
+   *
+   * LATCH LOGIC: Para capturar pulsos muito rápidos (< 5ms), não dependemos apenas
+   * de mudança de estado. Se o bit está no estado de trigger E passou tempo suficiente
+   * desde o último pulso (debounce), processamos como novo pulso.
    */
   private async processInputs(bits: boolean[]): Promise<void> {
     const config = getCachedConveyorConfig();
     const now = Date.now();
     const STUCK_PULSE_THRESHOLD_MS = 1000; // 1 segundo sem mudar = travado
+    const PULSE_DEBOUNCE_MS = config.triggerDebounceMs ?? 8; // Debounce entre pulsos (evita duplicatas)
 
     // Limpa alertas de inputs travados
     this.state.stuckInputs = [];
@@ -303,9 +309,15 @@ export class ConveyorController {
 
       const bitValue = bits[input.address.bit];
       const lastState = this.lastInputStates.get(input.id) ?? false;
-
-      // Detecta mudança de estado
       const stateChanged = bitValue !== lastState;
+
+      // Para inputs de pulso: verifica se bit está no estado de trigger
+      const isTriggered =
+        input.type === "pulse"
+          ? input.normallyOn
+            ? !bitValue
+            : bitValue
+          : false;
 
       if (stateChanged) {
         this.lastInputStates.set(input.id, bitValue);
@@ -319,15 +331,27 @@ export class ConveyorController {
           );
         }
 
-        // Processa tipos específicos
-        if (input.type === "pulse" && bitValue) {
-          await this.handlePulse(input.id, now);
+        // Processa tipos específicos na mudança de estado
+        if (input.type === "pulse" && isTriggered) {
+          const lastPulse = this.lastPulseTimestamps.get(input.id) ?? 0;
+          if (now - lastPulse >= PULSE_DEBOUNCE_MS) {
+            this.lastPulseTimestamps.set(input.id, now);
+            await this.handlePulse(input.id, now);
+          }
         } else if (input.type === "digital") {
           await this.handleDigitalInput(input.id, bitValue, input.normallyOn);
         }
-      } else {
-        // Detecta inputs de pulso travados
-        if (input.type === "pulse" && bitValue) {
+      } else if (input.type === "pulse" && isTriggered) {
+        // LATCH LOGIC: Mesmo sem mudança de estado, se o bit está triggered
+        // e passou tempo suficiente desde o último pulso, processa como novo pulso
+        const lastPulse = this.lastPulseTimestamps.get(input.id) ?? 0;
+        if (now - lastPulse >= PULSE_DEBOUNCE_MS) {
+          this.lastPulseTimestamps.set(input.id, now);
+          await this.handlePulse(input.id, now);
+        }
+      } else if (!stateChanged) {
+        // Detecta inputs de pulso travados (apenas para sensores NO)
+        if (input.type === "pulse" && !input.normallyOn && bitValue) {
           if (!this.inputStuckTimestamps.has(input.id)) {
             this.inputStuckTimestamps.set(input.id, now);
           }
@@ -631,23 +655,64 @@ export class ConveyorController {
     const now = Date.now();
     const config = getCachedConveyorConfig();
 
+    // DEBUG: Log de produtos rastreados
+    if (this.state.trackedProducts.length > 0) {
+      console.log(
+        `[DEBUG] ${this.state.trackedProducts.length} produtos rastreados`,
+      );
+    }
+
     // Não processa acionamentos se emergência estiver acionada
     if (this.state.inputs.emergencyPressed) {
+      console.log("[DEBUG] Emergência acionada - processamento bloqueado");
       return;
     }
 
     for (const product of this.state.trackedProducts) {
+      const timeUntilActivation = product.scheduledActivationTime - now;
+
+      if (product.status === "waiting") {
+        console.log(
+          `[DEBUG] Produto ${product.id.substring(0, 8)} aguardando - faltam ${timeUntilActivation}ms`,
+        );
+      }
+
       if (
         product.status === "waiting" &&
         now >= product.scheduledActivationTime
       ) {
+        console.log(
+          `[DEBUG] Tentando ativar produto ${product.id.substring(0, 8)}`,
+        );
+
         const output = config.conveyorOutputs.find(
           (o) => o.id === product.outputId,
         );
 
+        if (!output) {
+          console.log(`[DEBUG] Output ${product.outputId} não encontrado!`);
+          continue;
+        }
+
+        console.log(
+          `[DEBUG] Output encontrado: ${output.name}, modo: ${output.manualMode}`,
+        );
+
         if (output) {
-          await this.activateValve(output);
+          // Marca como ativado ANTES para evitar loop infinito se falhar
           product.status = "activated";
+          console.log(`[DEBUG] Marcado como activated ANTES de chamar valve`);
+
+          try {
+            await this.activateValve(output);
+            console.log(`[DEBUG] activateValve completou para ${output.name}`);
+          } catch (error: any) {
+            console.error(`[DEBUG] ERRO em activateValve: ${error.message}`);
+            systemLogger.error(
+              "Conveyor",
+              `Erro ao ativar ${output.name}: ${error.message}`,
+            );
+          }
 
           // Incrementa contadores
           const updatedOutputs = config.conveyorOutputs.map((o) =>
@@ -687,24 +752,55 @@ export class ConveyorController {
    * Ativa uma válvula
    */
   private async activateValve(output: ConveyorOutput): Promise<void> {
-    if (!this.client) return;
+    console.log(`[DEBUG activateValve] Iniciando para ${output.name}`);
+
+    if (!this.client) {
+      console.log(`[DEBUG activateValve] Cliente não existe!`);
+      return;
+    }
 
     if (
       output.manualMode === "disabled" ||
       output.manualMode === "force-closed"
     ) {
+      console.log(
+        `[DEBUG activateValve] Modo manual impediu: ${output.manualMode}`,
+      );
       return;
     }
 
-    const success = await this.client.setHoldingRegisterBit(
-      output.address.hr,
-      output.address.bit,
+    console.log(
+      `[DEBUG activateValve] Chamando setHoldingRegisterBit HR${output.address.hr} bit${output.address.bit}`,
     );
 
-    if (success) {
-      this.updateValveState(output.id, true);
-    } else {
-      this.addError("valve", `Falha ao ativar ${output.name}`);
+    try {
+      // Timeout de 2 segundos para evitar travamento
+      const timeoutPromise = new Promise<boolean>((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout na escrita Modbus")), 2000),
+      );
+
+      const writePromise = this.client.setHoldingRegisterBit(
+        output.address.hr,
+        output.address.bit,
+      );
+
+      const success = await Promise.race([writePromise, timeoutPromise]);
+
+      console.log(
+        `[DEBUG activateValve] setHoldingRegisterBit retornou: ${success}`,
+      );
+
+      if (success) {
+        this.updateValveState(output.id, true);
+      } else {
+        this.addError("valve", `Falha ao ativar ${output.name}`);
+      }
+    } catch (error: any) {
+      console.error(`[DEBUG activateValve] ERRO/TIMEOUT: ${error.message}`);
+      this.addError(
+        "valve",
+        `Timeout/Erro ao ativar ${output.name}: ${error.message}`,
+      );
     }
   }
 
@@ -767,13 +863,21 @@ export class ConveyorController {
     const elapsedSeconds = (now - this.rpmLastCheckTime) / 1000;
 
     if (elapsedSeconds >= 1.0) {
-      const rpm =
+      // Calcula RPM do eixo
+      const axleRPM =
         (this.rpmPulseCount / config.rpmPulsesPerRevolution) *
         (60 / elapsedSeconds);
-      this.state.stats.currentRPM = Math.round(rpm * 10) / 10;
 
+      // Aplica gear ratio se configurado (eixo gira mais rápido que esteira)
+      const conveyorRPM = config.gearRatio
+        ? axleRPM / config.gearRatio
+        : axleRPM;
+
+      this.state.stats.currentRPM = Math.round(conveyorRPM * 10) / 10;
+
+      // Calcula velocidade linear usando diameter da esteira
       const circumference = Math.PI * config.conveyorDiameter;
-      const speed = (circumference * rpm) / 60;
+      const speed = (circumference * conveyorRPM) / 60;
       this.state.stats.currentSpeed = Math.round(speed * 100) / 100;
 
       this.rpmPulseCount = 0;
