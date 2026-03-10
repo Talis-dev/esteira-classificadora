@@ -41,7 +41,7 @@ export default function PulseSensorsMonitor() {
   }
 
   const now = Date.now();
-  const PULSE_ACTIVE_THRESHOLD = 150; // Considera ativo se pulso foi nos últimos 150ms
+  const PULSE_ACTIVE_THRESHOLD = 50; // Considera ativo se pulso foi nos últimos 50ms
 
   const rpmActive = now - systemState.inputs.rpmLastPulse < PULSE_ACTIVE_THRESHOLD;
   const fullTurnActive = now - systemState.inputs.fullTurnLastPulse < PULSE_ACTIVE_THRESHOLD;
