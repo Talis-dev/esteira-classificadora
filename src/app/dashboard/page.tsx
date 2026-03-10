@@ -43,13 +43,14 @@ export default function DashboardPage() {
         <div className="grid lg:grid-cols-3 gap-3 lg:gap-4">
           {/* Coluna Esquerda */}
           <div className="lg:col-span-2 space-y-3 lg:space-y-4">
-            <SystemControl />
             <DistributionControls />
-            <QueueVisualization />
+            <QueueVisualization />    
           </div>
+
 
           {/* Coluna Direita */}
           <div className="space-y-3 lg:space-y-4">
+            <SystemControl />
             <ConveyorMonitor />
             <PulseSensorsMonitor />
             {/* <SystemLogs /> */}

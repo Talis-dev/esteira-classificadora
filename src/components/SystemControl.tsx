@@ -157,30 +157,30 @@ export default function SystemControl() {
         Controle do Sistema
       </h2>
 
-      <div className="flex gap-2 xl:gap-3">
+      <div className="grid grid-cols-3 gap-2 ">
         {/* Botão Iniciar/Abortar */}
         {!running && !connecting ? (
           <button
             onClick={handleStart}
             disabled={loading}
             className={cn(
-              "flex-1 flex items-center justify-center gap-2 px-4 py-2 xl:px-6 xl:py-3 text-sm xl:text-base rounded-lg font-medium transition-all",
+              "flex-1 flex items-center justify-center gap-2 p-2 text-sm rounded-lg font-medium transition-all",
               "disabled:opacity-50 disabled:cursor-not-allowed",
               "bg-green-600 text-white hover:bg-green-700 active:scale-95",
             )}
           >
-            <PlayIcon className="w-4 h-4 xl:w-5 xl:h-5" />
+            <PlayIcon className="w-4 h-4 " />
             {loading ? "Iniciando..." : "Iniciar Sistema"}
           </button>
         ) : connecting ? (
           <button
             onClick={handleStop}
             className={cn(
-              "flex-1 flex items-center justify-center gap-2 px-4 py-2 xl:px-6 xl:py-3 text-sm xl:text-base rounded-lg font-medium transition-all animate-pulse",
+              "flex-1 flex items-center justify-center gap-2 p-2 text-sm  rounded-lg font-medium transition-all animate-pulse",
               "bg-orange-600 text-white hover:bg-orange-700 active:scale-95",
             )}
           >
-            <StopIcon className="w-4 h-4 xl:w-5 xl:h-5" />
+            <StopIcon className="w-4 h-4 " />
             ⚠️ Abortar Conexão
           </button>
         ) : (
@@ -188,7 +188,7 @@ export default function SystemControl() {
             onClick={handleStart}
             disabled={loading}
             className={cn(
-              "flex-1 flex items-center justify-center gap-2 px-4 py-2 xl:px-6 xl:py-3 text-sm xl:text-base rounded-lg font-medium transition-all",
+              "flex-1 flex items-center justify-center gap-2 p-2 text-sm rounded-lg font-medium transition-all",
               "disabled:opacity-50 disabled:cursor-not-allowed",
               "bg-gray-100 text-gray-400",
             )}
@@ -230,10 +230,10 @@ export default function SystemControl() {
         >
           <SparklesIcon className="w-4 h-4 xl:w-5 xl:h-5" />
           {cleaningLoading
-            ? "Alternando..."
+            ? "Alternando!"
             : cleaningMode
-              ? "🔧 Modo Fachina ATIVO"
-              : "Ativar Modo Fachina"}
+              ? "Fachina ATIVO"
+              : "Ativar Fachina"}
         </button>
       </div>
 

@@ -7,6 +7,8 @@
 import { useState, useEffect } from "react";
 import { ConveyorSystemConfig } from "@/types/conveyor";
 import { cn } from "@/lib/utils";
+import { CheckBadgeIcon, CheckCircleIcon } from "@heroicons/react/24/outline";
+import { CheckIcon } from "@heroicons/react/24/solid";
 
 export default function DistributionControls() {
   const [config, setConfig] = useState<ConveyorSystemConfig | null>(null);
@@ -188,12 +190,12 @@ export default function DistributionControls() {
         onClick={handleSave}
         disabled={loading}
         className={cn(
-          "w-full py-3 rounded-lg font-medium transition-all",
+          "w-full py-2 rounded-lg font-medium transition-all",
           "bg-blue-600 text-white hover:bg-blue-700 active:scale-95",
           "disabled:opacity-50 disabled:cursor-not-allowed",
         )}
       >
-        {loading ? "Salvando..." : "💾 Salvar Configuração"}
+        {loading ? "Salvando..." : <> <CheckIcon className="w-6 h-6 inline-block mr-2" /> Salvar Configuração</>}
       </button>
     </div>
   );
