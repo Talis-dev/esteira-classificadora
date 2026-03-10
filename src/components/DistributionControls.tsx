@@ -95,21 +95,21 @@ export default function DistributionControls() {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-4">
-      <h2 className="text-xl font-bold text-gray-900 mb-4">
+    <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 md:p-6">
+      <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-3 sm:mb-4">
         Controle de Distribuição
       </h2>
 
       {/* Modo de Distribuição */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+      <div className="mb-4 sm:mb-6">
+        <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
           Modo de Distribuição
         </label>
         <div className="grid grid-cols-3 gap-2">
           <button
             onClick={() => setDistributionMode("manual")}
             className={cn(
-              "py-2 px-3 rounded-lg text-sm font-medium transition-all",
+              "py-2.5 sm:py-2 px-3 sm:px-4 rounded-lg text-sm sm:text-base font-medium transition-all",
               distributionMode === "manual"
                 ? "bg-blue-600 text-white ring-2 ring-blue-400"
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200",
@@ -120,7 +120,7 @@ export default function DistributionControls() {
           <button
             onClick={() => setDistributionMode("equal")}
             className={cn(
-              "py-2 px-3 rounded-lg text-sm font-medium transition-all",
+              "py-2.5 sm:py-2 px-3 sm:px-4 rounded-lg text-sm sm:text-base font-medium transition-all",
               distributionMode === "equal"
                 ? "bg-green-600 text-white ring-2 ring-green-400"
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200",
@@ -131,7 +131,7 @@ export default function DistributionControls() {
           <button
             onClick={() => setDistributionMode("percentage")}
             className={cn(
-              "py-2 px-3 rounded-lg text-sm font-medium transition-all",
+              "py-2.5 sm:py-2 px-3 sm:px-4 rounded-lg text-sm sm:text-base font-medium transition-all",
               distributionMode === "percentage"
                 ? "bg-purple-600 text-white ring-2 ring-purple-400"
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200",
@@ -146,14 +146,14 @@ export default function DistributionControls() {
       </div>
 
       {/* Targets por Minuto */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+      <div className="mb-4 sm:mb-6">
+        <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
           Metas por Minuto (0 = desabilitado)
         </label>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {config.conveyorOutputs.map((output) => (
-            <div key={output.id} className="flex flex-col w-fit">
-              <label className="text-sm text-gray-600 mb-1">
+            <div key={output.id} className="flex flex-col">
+              <label className="text-xs sm:text-sm text-gray-600 mb-1 font-medium">
                 {output.name}
               </label>
               <div className="relative">
@@ -170,13 +170,13 @@ export default function DistributionControls() {
                   }
                   disabled={!output.enabled}
                   className={cn(
-                    "w-52 px-3 py-2 border rounded-lg text-lg font-medium transition-all",
+                    "w-full px-3 py-2 pr-12 border rounded-lg text-base sm:text-lg font-medium transition-all",
                     output.enabled
                       ? "border-gray-300 focus:ring-2 focus:ring-blue-500"
                       : "bg-gray-200 border-gray-300 cursor-not-allowed",
                   )}
                 />
-                <span className="absolute right-8 top-2 text-lg text-gray-400">
+                <span className="absolute right-3 top-2 text-sm sm:text-base text-gray-400">
                   /min
                 </span>
               </div>
@@ -190,12 +190,20 @@ export default function DistributionControls() {
         onClick={handleSave}
         disabled={loading}
         className={cn(
-          "w-full py-2 rounded-lg font-medium transition-all",
+          "w-full py-2 rounded-lg text-sm sm:text-base font-medium transition-all",
           "bg-blue-600 text-white hover:bg-blue-700 active:scale-95",
           "disabled:opacity-50 disabled:cursor-not-allowed",
+          "flex items-center justify-center gap-2",
         )}
       >
-        {loading ? "Salvando..." : <> <CheckIcon className="w-6 h-6 inline-block mr-2" /> Salvar Configuração</>}
+        {loading ? (
+          "Salvando..."
+        ) : (
+          <>
+            <CheckIcon className="w-5 h-5 sm:w-6 sm:h-6" />
+            <span>Salvar Configuração</span>
+          </>
+        )}
       </button>
     </div>
   );
