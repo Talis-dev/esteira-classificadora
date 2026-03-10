@@ -33,6 +33,12 @@ export default function SystemLogsPage() {
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false); // Desabilitado por padrão
 
+  // Paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalLogs, setTotalLogs] = useState(0);
+  const [logsPerPage] = useState(100); // 100 logs por página
+
   // Busca logs
   const fetchLogs = useCallback(async () => {
     try {
@@ -46,18 +52,23 @@ export default function SystemLogsPage() {
         url += `file&date=${selectedDate}`;
       }
 
+      // Adiciona parâmetros de paginação
+      url += `&page=${currentPage}&limit=${logsPerPage}`;
+
       const response = await fetch(url);
       const data = await response.json();
 
       if (data.success) {
         setLogs(data.logs || []);
+        setTotalPages(data.totalPages || 1);
+        setTotalLogs(data.total || 0);
       }
     } catch (error) {
       console.error("❌ Erro ao buscar logs:", error);
     } finally {
       setLoading(false);
     }
-  }, [selectedDate]);
+  }, [selectedDate, currentPage, logsPerPage]);
 
   // Busca datas disponíveis e define data de hoje como padrão
   const fetchAvailableDates = useCallback(async () => {
@@ -225,12 +236,17 @@ export default function SystemLogsPage() {
     fetchAvailableDates();
   }, [fetchAvailableDates]);
 
-  // Busca inicial e quando mudar a data (só executa se selectedDate estiver definido)
+  // Busca inicial e quando mudar a data ou página (só executa se selectedDate estiver definido)
   useEffect(() => {
     if (selectedDate) {
       fetchLogs();
     }
-  }, [selectedDate, fetchLogs]);
+  }, [selectedDate, currentPage, fetchLogs]);
+
+  // Reseta para primeira página quando mudar filtros
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedDate, selectedLevel, selectedCategory, searchTerm]);
 
   // Categorias únicas
   const categories = Array.from(
@@ -438,7 +454,14 @@ export default function SystemLogsPage() {
           {/* Stats */}
           <div className="mt-4 flex flex-wrap gap-3 text-xs md:text-sm text-gray-600">
             <span>
-              Total: <strong>{logs.length}</strong> logs
+              Total: <strong>{totalLogs}</strong> logs
+            </span>
+            <span>
+              Página: <strong>{currentPage}</strong> de{" "}
+              <strong>{totalPages}</strong>
+            </span>
+            <span>
+              Mostrando: <strong>{logs.length}</strong> logs
             </span>
             <span>
               Filtrados: <strong>{filteredLogs.length}</strong> logs
@@ -450,6 +473,53 @@ export default function SystemLogsPage() {
               </strong>
             </span>
           </div>
+
+          {/* Paginação */}
+          {totalPages > 1 && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1 || loading}
+                  className="px-3 py-1.5 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Primeira
+                </button>
+                <button
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.max(1, prev - 1))
+                  }
+                  disabled={currentPage === 1 || loading}
+                  className="px-3 py-1.5 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  ← Anterior
+                </button>
+              </div>
+
+              <div className="text-sm font-medium text-gray-700">
+                Página {currentPage} de {totalPages}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                  }
+                  disabled={currentPage === totalPages || loading}
+                  className="px-3 py-1.5 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Próxima →
+                </button>
+                <button
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages || loading}
+                  className="px-3 py-1.5 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Última
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Logs Console */}
@@ -465,7 +535,7 @@ export default function SystemLogsPage() {
             </div>
           ) : (
             <div className="font-mono text-xs">
-              {[...filteredLogs].reverse().map((log) => {
+              {filteredLogs.map((log) => {
                 const isExpanded = expandedLogs.has(log.id);
                 const hasData = log.data && Object.keys(log.data).length > 0;
 
@@ -527,6 +597,51 @@ export default function SystemLogsPage() {
             </div>
           )}
         </div>
+
+        {/* Paginação Inferior */}
+        {totalPages > 1 && !loading && filteredLogs.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 p-4 bg-white rounded-lg shadow-md">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                ⏮ Primeira
+              </button>
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                ← Anterior
+              </button>
+            </div>
+
+            <div className="text-sm font-semibold text-gray-700">
+              Página {currentPage} de {totalPages} ({totalLogs} logs totais)
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() =>
+                  setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                }
+                disabled={currentPage === totalPages}
+                className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Próxima →
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Última ⏭
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

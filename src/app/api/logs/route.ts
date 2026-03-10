@@ -10,6 +10,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date");
     const source = searchParams.get("source") || "memory"; // memory ou file
+    const page = parseInt(searchParams.get("page") || "1");
+    const limit = parseInt(searchParams.get("limit") || "100");
 
     if (source === "file") {
       if (!date) {
@@ -21,25 +23,54 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      // Lê logs de um arquivo específico
+      // Lê logs de um arquivo específico (usa timezone local)
       const [year, month, day] = date.split("-").map(Number);
-      const targetDate = new Date(year, month - 1, day);
-      const logs = systemLogger.readLogsFromFile(targetDate);
+      // Cria data em UTC e ajusta para local para evitar problemas de timezone
+      const targetDate = new Date(year, month - 1, day, 12, 0, 0); // Meio-dia para evitar problemas de timezone
+      const allLogs = systemLogger.readLogsFromFile(targetDate);
+      
+      // Ordena do mais recente para o mais antigo
+      allLogs.sort((a, b) => b.timestamp - a.timestamp);
+
+      // Paginação
+      const total = allLogs.length;
+      const totalPages = Math.ceil(total / limit);
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const logs = allLogs.slice(startIndex, endIndex);
 
       return NextResponse.json({
         success: true,
         date,
         count: logs.length,
+        total,
+        page,
+        limit,
+        totalPages,
         logs,
       });
     } else {
-      // Retorna logs em memória (últimos 1000)
-      const logs = systemLogger.getLogs();
+      // Retorna logs em memória (paginados)
+      const allLogs = systemLogger.getLogs();
+      
+      // Ordena do mais recente para o mais antigo
+      allLogs.sort((a, b) => b.timestamp - a.timestamp);
+
+      // Paginação
+      const total = allLogs.length;
+      const totalPages = Math.ceil(total / limit);
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const logs = allLogs.slice(startIndex, endIndex);
 
       return NextResponse.json({
         success: true,
         source: "memory",
         count: logs.length,
+        total,
+        page,
+        limit,
+        totalPages,
         logs,
       });
     }

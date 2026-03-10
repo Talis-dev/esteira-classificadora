@@ -194,12 +194,14 @@ class SystemLogger {
   }
 
   /**
-   * Retorna o nome do arquivo de log para uma data
+   * Retorna o nome do arquivo de log para uma data (usa timezone local)
    */
   private getLogFileName(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
+    // Força uso de timezone local para evitar discrepâncias
+    const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+    const year = localDate.getFullYear();
+    const month = String(localDate.getMonth() + 1).padStart(2, "0");
+    const day = String(localDate.getDate()).padStart(2, "0");
     return `log-${year}-${month}-${day}.jsonl`;
   }
 
