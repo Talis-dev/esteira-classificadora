@@ -14,6 +14,7 @@ import {
   LockClosedIcon,
   LockOpenIcon,
   BoltIcon,
+  PowerIcon,
 } from "@heroicons/react/24/outline";
 import Link from "next/link";
 
@@ -23,6 +24,8 @@ export default function ConfigPanel() {
   const [saving, setSaving] = useState(false);
   const [password, setPassword] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const [uptime, setUptime] = useState<string>("Carregando...");
+  const [restarting, setRestarting] = useState(false);
 
   const ADMIN_PASSWORD = "415263";
 
@@ -37,7 +40,54 @@ export default function ConfigPanel() {
 
   useEffect(() => {
     fetchConfig();
+    fetchUptime();
+
+    // Atualiza uptime a cada 5 segundos
+    const uptimeInterval = setInterval(fetchUptime, 5000);
+    return () => clearInterval(uptimeInterval);
   }, []);
+
+  const fetchUptime = async () => {
+    try {
+      const response = await fetch("/api/system/restart");
+      const data = await response.json();
+      if (data.success) {
+        setUptime(data.uptime.formatted);
+      }
+    } catch (error) {
+      console.error("Erro ao buscar uptime:", error);
+    }
+  };
+
+  const handleRestartServer = async () => {
+    if (
+      !confirm(
+        "⚠️ ATENÇÃO: Isso vai encerrar o servidor Node.js!\n\nO agendador de tarefas do Windows irá reiniciá-lo automaticamente.\n\nTodos os clientes conectados serão desconectados.\n\nDeseja continuar?",
+      )
+    ) {
+      return;
+    }
+
+    setRestarting(true);
+    try {
+      const response = await fetch("/api/system/restart", {
+        method: "POST",
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert(
+          "✅ Servidor será reiniciado em 2 segundos...\n\nAguarde aproximadamente 10 segundos e recarregue a página.",
+        );
+      } else {
+        alert(`❌ Erro: ${data.error}`);
+        setRestarting(false);
+      }
+    } catch (error: any) {
+      alert(`❌ Erro: ${error.message}`);
+      setRestarting(false);
+    }
+  };
 
   const fetchConfig = async () => {
     try {
@@ -117,7 +167,6 @@ export default function ConfigPanel() {
         </div>
         <div className="flex gap-2">
           <Link
-
             href={isUnlocked ? "/test-clp" : "#"}
             className="px-4 py-2 rounded-lg border border-purple-300 text-purple-700 hover:bg-purple-50 flex items-center gap-2 transition-colors"
           >
@@ -186,6 +235,32 @@ export default function ConfigPanel() {
                 ? "✅ Endereços Modbus, conexão CLP e parâmetros da esteira liberados para edição"
                 : "🔒 Digite a senha para editar conexão CLP, endereços Modbus e parâmetros da esteira"}
             </p>
+          </div>
+
+          {/* Uptime e Botão de Reiniciar Servidor */}
+          <div className="flex flex-col items-end gap-2">
+            <div className="text-sm text-gray-600">
+              <div className="flex items-center gap-2">
+                <BoltIcon className="w-4 h-4" />
+                <span className="font-semibold">Uptime:</span>
+                <span className="font-mono">{uptime}</span>
+              </div>
+            </div>
+            <button
+              onClick={handleRestartServer}
+              disabled={!isUnlocked || restarting}
+              className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all"
+              title={
+                !isUnlocked
+                  ? "Desbloqueie as configurações avançadas para usar este botão"
+                  : "Reiniciar servidor Node.js"
+              }
+            >
+              <PowerIcon
+                className={`w-4 h-4 ${restarting ? "animate-spin" : ""}`}
+              />
+              {restarting ? "Reiniciando..." : "Reiniciar Servidor"}
+            </button>
           </div>
         </div>
       </div>
@@ -414,7 +489,7 @@ export default function ConfigPanel() {
                 className="grid grid-cols-6 gap-3 items-center p-3 bg-gray-50 rounded-lg border border-gray-200"
               >
                 <div>
-                  <input 
+                  <input
                     disabled={!isUnlocked}
                     type="text"
                     value={input.name}
@@ -481,20 +556,22 @@ export default function ConfigPanel() {
                   />
                 </div>
                 <div className="text-sm text-gray-600">
-                  {input.type === "pulse" ?
-                  <div>
-                    <ArrowPathIcon className="inline-block w-4 h-4 mr-1" />
-                   Pulso
-                  </div>  : <div>
-                    <BoltIcon className="inline-block w-4 h-4 mr-1" />  
-                    Digital
-                  </div>
-                  }
+                  {input.type === "pulse" ? (
+                    <div>
+                      <ArrowPathIcon className="inline-block w-4 h-4 mr-1" />
+                      Pulso
+                    </div>
+                  ) : (
+                    <div>
+                      <BoltIcon className="inline-block w-4 h-4 mr-1" />
+                      Digital
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                     disabled={!isUnlocked}
+                    disabled={!isUnlocked}
                     checked={input.normallyOn}
                     onChange={(e) =>
                       setConfig({
@@ -511,7 +588,7 @@ export default function ConfigPanel() {
                 </div>
                 <div className="flex items-center gap-2">
                   <input
-                     disabled={!isUnlocked}
+                    disabled={!isUnlocked}
                     type="checkbox"
                     checked={input.logChanges}
                     onChange={(e) =>
@@ -529,7 +606,7 @@ export default function ConfigPanel() {
                 </div>
                 <div className="flex items-center gap-2">
                   <input
-                   disabled={!isUnlocked}
+                    disabled={!isUnlocked}
                     type="checkbox"
                     checked={input.enabled}
                     onChange={(e) =>
@@ -647,7 +724,7 @@ function OutputConfigRow({
       </div>
       <div>
         <input
-         disabled={!isUnlocked}
+          disabled={!isUnlocked}
           type="number"
           value={output.delayMs}
           onChange={(e) =>
@@ -659,7 +736,7 @@ function OutputConfigRow({
       </div>
       <div>
         <input
-         disabled={!isUnlocked}
+          disabled={!isUnlocked}
           type="number"
           value={output.activationMs}
           onChange={(e) =>
