@@ -290,9 +290,8 @@ export class ConveyorController {
   /**
    * Processa os inputs lidos do CLP
    *
-   * LATCH LOGIC: Para capturar pulsos muito rápidos (< 5ms), não dependemos apenas
-   * de mudança de estado. Se o bit está no estado de trigger E passou tempo suficiente
-   * desde o último pulso (debounce), processamos como novo pulso.
+   * EDGE DETECTION: Detecta apenas mudanças de estado (bordas) com debounce
+   * configurável. Leitura ultra-rápida (2ms) captura pulsos rápidos.
    */
   private async processInputs(bits: boolean[]): Promise<void> {
     const config = getCachedConveyorConfig();
@@ -340,14 +339,6 @@ export class ConveyorController {
           }
         } else if (input.type === "digital") {
           await this.handleDigitalInput(input.id, bitValue, input.normallyOn);
-        }
-      } else if (input.type === "pulse" && isTriggered) {
-        // LATCH LOGIC: Mesmo sem mudança de estado, se o bit está triggered
-        // e passou tempo suficiente desde o último pulso, processa como novo pulso
-        const lastPulse = this.lastPulseTimestamps.get(input.id) ?? 0;
-        if (now - lastPulse >= PULSE_DEBOUNCE_MS) {
-          this.lastPulseTimestamps.set(input.id, now);
-          await this.handlePulse(input.id, now);
         }
       } else if (!stateChanged) {
         // Detecta inputs de pulso travados (apenas para sensores NO)
@@ -423,8 +414,10 @@ export class ConveyorController {
       case "inverter":
         this.state.inputs.inverterFault = !isNormal;
         if (!isNormal) {
-          systemLogger.error("Conveyor", "Falha no inversor!");
-          await this.stop();
+          systemLogger.warning(
+            "Conveyor",
+            "⚠️ Falha no inversor",
+          );
         }
         break;
 
