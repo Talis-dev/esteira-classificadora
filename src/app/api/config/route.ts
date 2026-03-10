@@ -3,7 +3,6 @@
 // ============================================
 
 import { NextRequest, NextResponse } from "next/server";
-import { getController } from "../controller-instance";
 import { loadConfig, saveConfig, resetConfig } from "@/lib/config-manager";
 import { SystemConfig } from "@/types";
 
@@ -11,7 +10,7 @@ import { SystemConfig } from "@/types";
 export async function GET(request: NextRequest) {
   try {
     const config = loadConfig();
-    
+
     return NextResponse.json({
       success: true,
       config,
@@ -45,18 +44,12 @@ export async function POST(request: NextRequest) {
 
     // Salva configuração no arquivo
     const saved = saveConfig(config);
-    
+
     if (!saved) {
       return NextResponse.json(
         { error: "Erro ao salvar configuração" },
         { status: 500 },
       );
-    }
-
-    // Se o controlador está ativo, atualiza a configuração
-    const controller = getController();
-    if (controller) {
-      controller.updateConfig(config);
     }
 
     return NextResponse.json({
@@ -74,11 +67,6 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const config = resetConfig();
-
-    const controller = getController();
-    if (controller) {
-      controller.updateConfig(config);
-    }
 
     return NextResponse.json({
       success: true,

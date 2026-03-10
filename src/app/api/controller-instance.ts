@@ -11,3 +11,10 @@ import { conveyorController } from "@/lib/conveyor-controller";
 export function getController() {
   return conveyorController;
 }
+
+/**
+ * Mantém compatibilidade com código legado que espera inicialização explícita
+ */
+export function initializeController() {
+  return conveyorController;
+}

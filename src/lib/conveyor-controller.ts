@@ -888,6 +888,43 @@ export class ConveyorController {
   }
 
   /**
+   * Compatibilidade com rotas legadas
+   */
+  getSystemState(): ConveyorSystemState {
+    return this.getState();
+  }
+
+  /**
+   * Compatibilidade com rota legada de filas
+   */
+  getQueueManager() {
+    return {
+      clearQueue: (outputId: number) => {
+        const before = this.state.trackedProducts.length;
+        this.state.trackedProducts = this.state.trackedProducts.filter(
+          (product) => product.outputId !== outputId,
+        );
+        const removed = before - this.state.trackedProducts.length;
+        systemLogger.warning(
+          "Conveyor",
+          `Fila da saída ${outputId} limpa (${removed} itens removidos)`,
+        );
+      },
+      clearAllQueues: () => {
+        const removed = this.state.trackedProducts.length;
+        this.state.trackedProducts = [];
+        systemLogger.warning(
+          "Conveyor",
+          `Todas as filas limpas (${removed} itens removidos)`,
+        );
+      },
+      clearLogs: () => {
+        systemLogger.clearLogs();
+      },
+    };
+  }
+
+  /**
    * Verifica se está rodando
    */
   isRunning(): boolean {
