@@ -35,7 +35,7 @@ export interface ConveyorOutput {
   activationMs: number; // Tempo que fica acionado (ms)
   enabled: boolean; // Saída habilitada
   manualMode: "auto" | "force-open" | "force-closed" | "disabled"; // Modo manual
-  targetPerMinute: number; // Meta de produtos por minuto (0 = ilimitado)
+  targetPerMinute: number; // Meta de produtos por minuto (0 = desabilitado)
   currentCount: number; // Contador atual de produtos desviados no minuto
   targetCount: number; // DEPRECATED: Usar targetPerMinute
 }

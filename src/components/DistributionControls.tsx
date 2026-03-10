@@ -146,7 +146,7 @@ export default function DistributionControls() {
       {/* Targets por Minuto */}
       <div className="mb-4">
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          Metas por Minuto (0 = ilimitado)
+          Metas por Minuto (0 = desabilitado)
         </label>
         <div className="grid grid-cols-3 gap-3">
           {config.conveyorOutputs.map((output) => (

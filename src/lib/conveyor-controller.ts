@@ -520,10 +520,10 @@ export class ConveyorController {
         ).length;
         const totalCount = activatedCount + scheduledCount;
 
-        // Se targetPerMinute é 0, aceita ilimitado
+        // Se targetPerMinute é 0, saída está desabilitada (não aceita produtos)
         // Se não atingiu a meta do minuto (considerando agendados), aceita
         if (
-          output.targetPerMinute === 0 ||
+          output.targetPerMinute > 0 &&
           totalCount < output.targetPerMinute
         ) {
           return output;
@@ -543,7 +543,7 @@ export class ConveyorController {
         ).length;
         const totalCount = activatedCount + scheduledCount;
         return (
-          output.targetPerMinute === 0 || totalCount < output.targetPerMinute
+          output.targetPerMinute > 0 && totalCount < output.targetPerMinute
         );
       });
 
@@ -568,7 +568,7 @@ export class ConveyorController {
 
         // Verifica se tem espaço
         if (
-          currentOutput.targetPerMinute === 0 ||
+          currentOutput.targetPerMinute > 0 &&
           totalCount < currentOutput.targetPerMinute
         ) {
           return currentOutput;
@@ -600,7 +600,7 @@ export class ConveyorController {
       let maxDeficit = -Infinity;
 
       for (const output of enabledOutputs) {
-        if (output.targetPerMinute === 0) continue;
+        if (output.targetPerMinute <= 0) continue;
 
         const activatedCount =
           this.state.stats.outputCountsPerMinute[output.id] || 0;

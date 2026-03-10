@@ -491,7 +491,7 @@ export default function ConfigPanel() {
           </div>
           <p className="text-xs text-gray-500 mt-2">
             💡 Delay: tempo do gatilho até acionamento | Ativação: tempo que
-            válvula fica aberta | Por Minuto: meta de peças/min (0 = ilimitado)
+            válvula fica aberta | Por Minuto: meta de peças/min (0 = desabilitado) | Modo Manual: forçar aberto/fechado ou automático
           </p>
         </section>
       </div>

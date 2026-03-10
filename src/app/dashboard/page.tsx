@@ -6,6 +6,7 @@ import QueueVisualization from "@/components/QueueVisualization";
 import SystemLogs from "@/components/SystemLogs";
 import CriticalAlertsWidget from "@/components/CriticalAlertsWidget";
 import DistributionControls from "@/components/DistributionControls";
+import PulseSensorsMonitor from "@/components/PulseSensorsMonitor";
 
 export default function DashboardPage() {
   return (
@@ -50,6 +51,7 @@ export default function DashboardPage() {
           {/* Coluna Direita */}
           <div className="space-y-3 lg:space-y-4">
             <ConveyorMonitor />
+            <PulseSensorsMonitor />
             {/* <SystemLogs /> */}
           </div>
         </div>
