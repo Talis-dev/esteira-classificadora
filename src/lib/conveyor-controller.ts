@@ -230,8 +230,6 @@ export class ConveyorController {
       };
 
       this.state.lastMinuteReset = Date.now();
-
-      systemLogger.info("Conveyor", " Contadores por minuto resetados");
     }, 60000); // 60 segundos
   }
 

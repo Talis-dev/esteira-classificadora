@@ -6,7 +6,6 @@ import { ArrowLeftIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
 import SystemControl from "@/components/SystemControl";
 import ConveyorMonitor from "@/components/ConveyorMonitor";
 import QueueVisualization from "@/components/QueueVisualization";
-import SystemLogs from "@/components/SystemLogs";
 import CriticalAlertsWidget from "@/components/CriticalAlertsWidget";
 import DistributionControls from "@/components/DistributionControls";
 import PulseSensorsMonitor from "@/components/PulseSensorsMonitor";

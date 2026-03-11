@@ -4,7 +4,7 @@
 // COMPONENTE - CONTROLES DE DISTRIBUIÇÃO
 // ============================================
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ConveyorSystemConfig } from "@/types/conveyor";
 import { cn } from "@/lib/utils";
 import { CheckBadgeIcon, CheckCircleIcon } from "@heroicons/react/24/outline";
@@ -21,9 +21,31 @@ export default function DistributionControls() {
     3: 0,
   });
   const [loading, setLoading] = useState(false);
+  const lastInteractionRef = useRef<number>(Date.now());
+  const hasUnsavedChangesRef = useRef<boolean>(false);
+
+  // Helper para marcar interação do usuário
+  const markUserInteraction = () => {
+    hasUnsavedChangesRef.current = true;
+    lastInteractionRef.current = Date.now();
+  };
 
   useEffect(() => {
     fetchConfig();
+
+    // Polling a cada 5 segundos para sincronizar com outros dispositivos
+    const interval = setInterval(() => {
+      const timeSinceLastInteraction = Date.now() - lastInteractionRef.current;
+
+      // Só atualiza se:
+      // 1. Não houver mudanças não salvas
+      // 2. OU se passou mais de 30 segundos sem interação (usuário abandonou)
+      if (!hasUnsavedChangesRef.current || timeSinceLastInteraction > 30000) {
+        fetchConfig();
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const fetchConfig = async () => {
@@ -33,12 +55,14 @@ export default function DistributionControls() {
       setConfig(data.config);
       setDistributionMode(data.config.distributionMode || "manual");
 
-      // Carrega targets
-      const newTargets: { [key: number]: number } = {};
-      data.config.conveyorOutputs.forEach((output: any) => {
-        newTargets[output.id] = output.targetPerMinute || 0;
-      });
-      setTargets(newTargets);
+      // Carrega targets apenas se não houver mudanças não salvas
+      if (!hasUnsavedChangesRef.current) {
+        const newTargets: { [key: number]: number } = {};
+        data.config.conveyorOutputs.forEach((output: any) => {
+          newTargets[output.id] = output.targetPerMinute || 0;
+        });
+        setTargets(newTargets);
+      }
     } catch (error) {
       console.error("Erro ao carregar config:", error);
     }
@@ -68,6 +92,7 @@ export default function DistributionControls() {
 
       if (response.ok) {
         alert("✅ Configuração salva com sucesso!");
+        hasUnsavedChangesRef.current = false; // Marca como salvo
         fetchConfig();
       } else {
         alert("❌ Erro ao salvar configuração");
@@ -107,7 +132,10 @@ export default function DistributionControls() {
         </label>
         <div className="grid grid-cols-3 gap-2">
           <button
-            onClick={() => setDistributionMode("manual")}
+            onClick={() => {
+              markUserInteraction();
+              setDistributionMode("manual");
+            }}
             className={cn(
               "py-2 px-3 sm:px-4 rounded-lg text-sm sm:text-base font-medium transition-all",
               distributionMode === "manual"
@@ -115,10 +143,13 @@ export default function DistributionControls() {
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200",
             )}
           >
-          * Sequencial
+            * Sequencial
           </button>
           <button
-            onClick={() => setDistributionMode("equal")}
+            onClick={() => {
+              markUserInteraction();
+              setDistributionMode("equal");
+            }}
             className={cn(
               "py-2 px-3 sm:px-4 rounded-lg text-sm sm:text-base font-medium transition-all",
               distributionMode === "equal"
@@ -126,10 +157,13 @@ export default function DistributionControls() {
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200",
             )}
           >
-          = Igual
+            = Igual
           </button>
           <button
-            onClick={() => setDistributionMode("percentage")}
+            onClick={() => {
+              markUserInteraction();
+              setDistributionMode("percentage");
+            }}
             className={cn(
               "py-2 px-3 sm:px-4 rounded-lg text-sm sm:text-base font-medium transition-all",
               distributionMode === "percentage"
@@ -137,7 +171,7 @@ export default function DistributionControls() {
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200",
             )}
           >
-          % Porcentagem
+            % Porcentagem
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-2">
@@ -162,12 +196,13 @@ export default function DistributionControls() {
                   min="0"
                   step="1"
                   value={targets[output.id] || 0}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    markUserInteraction();
                     setTargets({
                       ...targets,
                       [output.id]: parseInt(e.target.value) || 0,
-                    })
-                  }
+                    });
+                  }}
                   disabled={!output.enabled}
                   className={cn(
                     "w-full px-3 py-2 pr-12 border rounded-lg text-base sm:text-lg font-medium transition-all",
