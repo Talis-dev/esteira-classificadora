@@ -5,7 +5,7 @@
 // ============================================
 
 import { useEffect, useState } from "react";
-import { ConveyorSystemState } from "@/types/conveyor";
+import { ConveyorSystemState, ConveyorSystemConfig } from "@/types/conveyor";
 import { cn } from "@/lib/utils";
 
 interface CountRecord {
@@ -21,10 +21,12 @@ export default function QueueVisualization() {
   const [systemState, setSystemState] = useState<ConveyorSystemState | null>(
     null,
   );
+  const [config, setConfig] = useState<ConveyorSystemConfig | null>(null);
   const [records, setRecords] = useState<CountRecord[]>([]);
 
   useEffect(() => {
     fetchStatus();
+    fetchConfig();
     fetchRecords();
     const statusInterval = setInterval(fetchStatus, 500);
     const recordsInterval = setInterval(fetchRecords, 5000);
@@ -43,6 +45,18 @@ export default function QueueVisualization() {
       }
     } catch (error) {
       console.error("Erro ao buscar status:", error);
+    }
+  };
+
+  const fetchConfig = async () => {
+    try {
+      const response = await fetch("/api/conveyor-config");
+      const data = await response.json();
+      if (data.config) {
+        setConfig(data.config);
+      }
+    } catch (error) {
+      console.error("Erro ao buscar config:", error);
     }
   };
 
@@ -81,6 +95,13 @@ export default function QueueVisualization() {
     }
   });
 
+  // Helper para obter nome da saída
+  const getOutputName = (outputId: number): string => {
+    if (!config) return `Saída ${outputId}`;
+    const output = config.conveyorOutputs.find((o) => o.id === outputId);
+    return output ? output.name : `Saída ${outputId}`;
+  };
+
   return (
     <div className="space-y-4">
       {/* Tabela de Status */}
@@ -118,7 +139,7 @@ export default function QueueVisualization() {
                 const processed = systemState.stats.outputCounts[outputId] || 0;
                 const perMinute =
                   systemState.stats.outputCountsPerMinute[outputId] || 0;
-                const outputName = `Saída ${outputId}`;
+                const outputName = getOutputName(outputId);
 
                 return (
                   <tr
@@ -153,6 +174,27 @@ export default function QueueVisualization() {
                   </tr>
                 );
               })}
+              {/* Linha de Rejeitados */}
+              <tr className="border-t-2 border-gray-300 bg-gray-50">
+                <td className="py-2.5 px-3 font-bold text-red-700">
+                  Rejeitados (Passaram Direto)
+                </td>
+                <td className="py-2.5 px-3 text-center">
+                  <span className="inline-block px-2 py-0.5 rounded bg-gray-100 text-gray-500 text-xs font-medium">
+                    -
+                  </span>
+                </td>
+                <td className="py-2.5 px-3 text-center">
+                  <span className="inline-block px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-medium">
+                    {systemState.stats.totalPassed || 0}
+                  </span>
+                </td>
+                <td className="py-2.5 px-3 text-center">
+                  <span className="inline-block px-2 py-0.5 rounded bg-gray-100 text-gray-500 text-xs font-medium">
+                    -
+                  </span>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
