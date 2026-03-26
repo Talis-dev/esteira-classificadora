@@ -1,6 +1,6 @@
-# SmartConveyor 🚀
+# SmartConveyor
 
-Sistema completo de gerenciamento de esteira distribuidora com comunicação Modbus TCP bidirecional, controle de filas inteligente e interface web em tempo real.
+Sistema industrial de controle de esteira classificadora com comunicação Modbus TCP com CLP Schneider, distribuição inteligente de produtos e interface web em tempo real acessível de qualquer dispositivo na rede.
 
 ## 🎯 Características
 
@@ -28,42 +28,6 @@ npm run build
 
 # Iniciar produção
 npm start
-```
-
-## 📁 Estrutura do Projeto
-
-```
-src/
-├── app/
-│   ├── api/                    # API Routes
-│   │   ├── modbus/            # Endpoints Modbus (status, control, test-clp)
-│   │   ├── config/            # Configuração do sistema
-│   │   ├── queue/             # Gerenciamento de filas
-│   │   ├── system/            # Sistema (connections, alerts, restart)
-│   │   └── logs/              # Logs do sistema
-│   ├── dashboard/             # Página de monitoramento principal
-│   ├── settings/              # Página de configurações
-│   ├── test-clp/              # Página de teste do CLP
-│   └── page.tsx               # Página inicial
-├── components/                # Componentes React
-│   ├── ConveyorMonitor.tsx   # Monitor de status com modos
-│   ├── QueueVisualization.tsx # Visualização de filas
-│   ├── SystemControl.tsx      # Controles start/stop com timeout
-│   ├── ConfigPanel.tsx        # Painel de configuração
-│   ├── CleaningModeControl.tsx # Controle de modo fachina
-│   └── SystemLogs.tsx         # Logs do sistema
-├── lib/                       # Lógica de negócio
-│   ├── modbus-client.ts      # Cliente Modbus TCP
-│   ├── modbus-server.ts      # Servidor Modbus TCP
-│   ├── modbus-manager.ts     # Gerenciador de clientes
-│   ├── queue-manager.ts      # Gerenciador de filas
-│   ├── conveyor-controller.ts # Controlador principal
-│   ├── connection-tracker.ts  # Rastreador de conexões
-│   ├── critical-alerts.ts    # Sistema de alertas
-│   ├── system-logger.ts      # Logger do sistema
-│   └── config-manager.ts     # Gerenciador de configuração
-└── types/                     # TypeScript types
-    └── index.ts
 ```
 
 ## 🔧 Configuração
